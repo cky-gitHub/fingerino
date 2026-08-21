@@ -1,0 +1,23 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+
+# Builds
+build/
+dist/
+
+# Virtual envs
+.venv/
+venv/
+env/
+
+# The hand-landmark model is downloaded on first run (not committed).
+hand_landmarker.task
+*.task.part
+
+# OS / editor cruft
+.DS_Store
+.idea/
+.vscode/
