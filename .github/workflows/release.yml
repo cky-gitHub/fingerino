@@ -1,0 +1,138 @@
+name: Release
+
+# Push a tag to cut a release:
+#     git tag v0.1.0 && git push origin v0.1.0
+#
+# Builds the installers on real Windows / Apple Silicon / Intel Mac runners —
+# PyInstaller cannot cross-compile, so there is one job per target — and
+# attaches them to a GitHub Release people can download and open.
+#
+# Run it from the Actions tab (workflow_dispatch) to test a build without
+# publishing anything; the artifacts are uploaded either way.
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write        # needed to create the release
+
+jobs:
+  build:
+    name: ${{ matrix.label }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            label: windows-x64
+          - os: macos-latest       # Apple Silicon
+            label: macos-arm64
+          # GitHub's last Intel image; Apple Silicon only after autumn 2027.
+          - os: macos-15-intel
+            label: macos-intel
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install . pyinstaller
+
+      - name: Install Inno Setup
+        if: runner.os == 'Windows'
+        run: choco install innosetup --no-progress -y
+
+      - name: Build
+        env:
+          # Set these as repository secrets to ship a signed, notarized Mac
+          # app. Without them the build still succeeds, ad-hoc signed, and
+          # users click through Gatekeeper once (see the README).
+          APPLE_DEVELOPER_ID: ${{ secrets.APPLE_DEVELOPER_ID }}
+          APPLE_NOTARY_PROFILE: ${{ secrets.APPLE_NOTARY_PROFILE }}
+        run: python packaging/build.py
+
+      # The runners have no webcam, so the app itself can't be launched — and
+      # a failed camera open raises a modal dialog nothing would ever dismiss.
+      # --selftest loads MediaPipe and the bundled model with no camera and no
+      # window, which is the part that actually breaks in a packaged build.
+      - name: Selftest the packaged app
+        shell: python
+        run: |
+          import glob, os, subprocess, sys
+
+          exe = ("dist/Fingerino/Fingerino.exe" if sys.platform == "win32"
+                 else "dist/Fingerino.app/Contents/MacOS/Fingerino")
+          assert os.path.exists(exe), f"no executable at {exe}"
+          assert glob.glob("dist/release/*"), "nothing in dist/release"
+
+          done = subprocess.run([exe, "--selftest"], timeout=300)
+
+          # The app is built without a console, so its report only exists on
+          # disk; print it either way, it is the whole diagnostic.
+          cache = (os.path.join(os.environ["LOCALAPPDATA"], "fingerino")
+                   if sys.platform == "win32"
+                   else os.path.expanduser("~/Library/Caches/fingerino"))
+          report = os.path.join(cache, "selftest.txt")
+          if os.path.exists(report):
+              print(open(report, encoding="utf-8").read())
+
+          assert done.returncode == 0, f"selftest exited {done.returncode}"
+          print("release files:", os.listdir("dist/release"))
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: fingerino-${{ matrix.label }}
+          path: dist/release/*
+          if-no-files-found: error
+
+  release:
+    name: Publish release
+    needs: build
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/')
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - name: Create the GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          gh release create "${GITHUB_REF_NAME}" \
+            --title "Fingerino ${GITHUB_REF_NAME}" \
+            --notes-file - <<'NOTES'
+          ## Download
+
+          | Your machine | File | What to do |
+          | --- | --- | --- |
+          | Windows 10 / 11 | `...-windows-x64-Setup.exe` | Run it, then launch Fingerino |
+          | Mac (Apple Silicon) | `...-macos-arm64.dmg` | Open it, drag Fingerino to Applications |
+          | Mac (Intel) | `...-macos-intel.dmg` | Open it, drag Fingerino to Applications |
+
+          Not sure which Mac you have? Apple menu → About This Mac: "Apple M…"
+          means Apple Silicon, "Intel" means Intel.
+
+          ### First launch
+
+          These builds aren't code-signed, so your OS asks once:
+
+          - **Windows** — SmartScreen shows a blue box. Click **More info → Run anyway**.
+          - **macOS** — the app is blocked. Open **System Settings → Privacy &
+            Security**, scroll down, and press **Open Anyway**.
+
+          Fingerino needs **camera** access on both platforms, and on macOS also
+          **Accessibility** (System Settings → Privacy & Security →
+          Accessibility) before it can move the cursor. It'll prompt you.
+          NOTES
+          gh release upload "${GITHUB_REF_NAME}" artifacts/*

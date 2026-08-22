@@ -4,7 +4,8 @@ Runs in LIVE_STREAM mode: frames are pushed in with :meth:`HandTracker.submit`
 and results arrive on a background thread, which we stash so the main loop can
 read the most recent landmarks without blocking.
 
-The landmark model (~7 MB) is not shipped with the package. It is downloaded
+The landmark model (~7 MB) is shipped inside the packaged app, but not inside
+the Python package. When it isn't found alongside the code it is downloaded
 once on first run into a per-user cache directory and reused thereafter.
 """
 
@@ -49,6 +50,11 @@ def _cache_dir() -> str:
     return path
 
 
+def cache_dir() -> str:
+    """Public alias — other modules cache generated assets alongside the model."""
+    return _cache_dir()
+
+
 def _default_model_path() -> str:
     """Resolve the model location.
 
@@ -58,6 +64,12 @@ def _default_model_path() -> str:
     override = os.environ.get("FINGERINO_MODEL")
     if override:
         return override
+    if getattr(sys, "frozen", False):
+        # PyInstaller unpacks the bundled model beside the package in _MEIPASS.
+        packaged = os.path.join(getattr(sys, "_MEIPASS", ""), "fingerino",
+                                config.MODEL_FILENAME)
+        if os.path.exists(packaged):
+            return packaged
     bundled = os.path.join(os.path.dirname(os.path.abspath(__file__)),
                            config.MODEL_FILENAME)
     if os.path.exists(bundled):
@@ -65,12 +77,54 @@ def _default_model_path() -> str:
     return os.path.join(_cache_dir(), config.MODEL_FILENAME)
 
 
+_last_pct_shown = -1
+
+
+def _out(text: str) -> None:
+    """Write to stdout if there is one.
+
+    A packaged app is built without a console, so ``sys.stdout`` is ``None``
+    and writing to it directly raises. ``print`` already tolerates that; the
+    progress bar needs partial writes, so it goes through here instead.
+    """
+    stream = sys.stdout
+    if stream is None:
+        return
+    stream.write(text)
+    stream.flush()
+
+
+def _report_progress(block_count: int, block_size: int, total_size: int) -> None:
+    global _last_pct_shown
+    done = block_count * block_size
+    if total_size > 0:
+        done = min(done, total_size)
+        pct = done * 100 // total_size
+        if pct == _last_pct_shown and done < total_size:
+            return  # skip redundant redraws — flushing on every 8 KB block stalls the download
+        _last_pct_shown = pct
+        bar_width = 30
+        filled = bar_width * done // total_size
+        bar = "#" * filled + "-" * (bar_width - filled)
+        _out(
+            f"\r[fingerino] downloading model [{bar}] {pct:3d}% "
+            f"({done / 1e6:.1f}/{total_size / 1e6:.1f} MB)"
+        )
+    else:
+        _out(f"\r[fingerino] downloading model ({done / 1e6:.1f} MB)")
+
+
 def _ensure_model(path: str) -> None:
     if os.path.exists(path):
         return
+    global _last_pct_shown
+    _last_pct_shown = -1
     print(f"[fingerino] downloading hand model (~7 MB) to {path} ...")
     tmp = path + ".part"
-    urllib.request.urlretrieve(_MODEL_URL, tmp)  # download to temp, then rename
+    try:
+        urllib.request.urlretrieve(_MODEL_URL, tmp, reporthook=_report_progress)
+    finally:
+        _out("\n")
     os.replace(tmp, path)                          # so a partial file is never used
     print("[fingerino] model ready.")
 
@@ -81,6 +135,7 @@ class HandTracker:
     def __init__(self, model_path: str | None = None) -> None:
         model_path = model_path or _default_model_path()
         _ensure_model(model_path)
+        self.model_path = model_path        # reported by --selftest
 
         self._lock = threading.Lock()
         self._latest: HandResult | None = None

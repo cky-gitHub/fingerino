@@ -6,9 +6,13 @@ can be changed in one place. On pynput, ``Key.cmd`` is the Windows / Super key.
 
 from __future__ import annotations
 
+import sys
+
 from pynput.keyboard import Controller, Key
 
 from . import config
+
+_IS_MAC = sys.platform == "darwin"
 
 _kb = Controller()
 
@@ -30,12 +34,24 @@ def _combo(*keys) -> None:
 
 
 def minimize_all() -> None:
-    """Clear the desktop. show_desktop -> Win+D ; minimize_all -> Win+M."""
+    """Clear the desktop.
+
+    Windows: show_desktop -> Win+D ; minimize_all -> Win+M.
+    macOS: F11, Mission Control's Show Desktop (it toggles, so restore_all
+    sends the same key). If F11 does nothing on your Mac, the shortcut is
+    turned off or remapped in System Settings > Keyboard > Shortcuts.
+    """
+    if _IS_MAC:
+        _tap(Key.f11)
+        return
     _combo(Key.cmd, "d" if config.MINIMIZE_ACTION == "show_desktop" else "m")
 
 
 def restore_all() -> None:
     """Bring the windows back. Win+D toggles the desktop; else Win+Shift+M."""
+    if _IS_MAC:
+        _tap(Key.f11)
+        return
     if config.MINIMIZE_ACTION == "show_desktop":
         _combo(Key.cmd, "d")
     else:
@@ -43,8 +59,8 @@ def restore_all() -> None:
 
 
 def switch_window() -> None:
-    """Alt+Tab to the most recent window."""
-    _combo(Key.alt, Key.tab)
+    """Alt+Tab (Cmd+Tab on macOS) to the most recent window."""
+    _combo(Key.cmd if _IS_MAC else Key.alt, Key.tab)
 
 
 def open_ai_chat() -> None:

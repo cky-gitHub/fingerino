@@ -6,7 +6,7 @@ discrete events each frame:
     posture              -> mode      -> action
     -----------------------------------------------------------------
     index out, middle in -> move      -> drive cursor; a fresh point = click
-    index + middle out   -> scroll    -> vertical hand motion scrolls
+    index + middle out   -> scroll    -> vertical fingertip motion scrolls
     flat hand (4 out)    -> flat      -> a downward wave minimises windows
     both hands crossed   -> exit      -> hold the "X" briefly to quit
 
@@ -33,8 +33,12 @@ Landmarks = list[Landmark]
 
 _WRIST = 0
 _MIDDLE_MCP = 9
+_INDEX_TIP = 8
 _MIDDLE_TIP = 12
 _PALM_POINTS = (0, 5, 9, 13, 17)
+# Scroll follows the two extended fingertips, so the motion that drives the
+# wheel is the one the user is actually watching.
+_SCROLL_POINTS = (_INDEX_TIP, _MIDDLE_TIP)
 # (tip, pip) per finger.
 _INDEX = (8, 6)
 _MIDDLE = (12, 10)
@@ -55,6 +59,17 @@ def _hand_scale(lms: Landmarks) -> float:
 def _palm_center(lms: Landmarks) -> tuple[float, float]:
     xs = sum(lms[i][0] for i in _PALM_POINTS) / len(_PALM_POINTS)
     ys = sum(lms[i][1] for i in _PALM_POINTS) / len(_PALM_POINTS)
+    return xs, ys
+
+
+def scroll_point(lms: Landmarks) -> tuple[float, float]:
+    """Midpoint of the index and middle fingertips — the scroll anchor.
+
+    Averaging the two tips rather than picking one keeps the anchor steady if
+    a single fingertip is momentarily mis-landmarked.
+    """
+    xs = sum(lms[i][0] for i in _SCROLL_POINTS) / len(_SCROLL_POINTS)
+    ys = sum(lms[i][1] for i in _SCROLL_POINTS) / len(_SCROLL_POINTS)
     return xs, ys
 
 
@@ -231,7 +246,7 @@ class GestureEngine:
         return 0.0
 
     def _scroll(self, lms: Landmarks) -> int:
-        y = _palm_center(lms)[1]
+        y = scroll_point(lms)[1]
         if self._scroll_prev_y is None:
             self._scroll_prev_y = y
             return 0

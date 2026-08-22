@@ -100,24 +100,41 @@ EXIT_MIN_ANGLE_DEG = 25.0           # the two hands must actually cross, not ali
 # ---------------------------------------------------------------------------
 WINDOW_NAME = "Fingerino"
 
-# BGR colours (OpenCV order). Neutral greys + one restrained steel-blue accent.
-COLOR_PANEL = (26, 24, 22)          # near-black panel fill
-COLOR_PANEL_BORDER = (58, 55, 52)   # hairline panel border
-COLOR_STROKE = (120, 118, 112)      # muted grey (control zone, inactive)
-COLOR_STROKE_ACTIVE = (206, 204, 200)  # near-white grey (control zone, tracking)
-COLOR_TEXT = (234, 233, 231)
-COLOR_TEXT_DIM = (150, 148, 146)
-COLOR_CURSOR = (238, 236, 234)      # near-white cursor mark
-COLOR_ACCENT = (176, 148, 108)      # muted steel blue, used sparingly
-COLOR_OK = (120, 176, 128)          # muted green status dot
-COLOR_IDLE = (120, 118, 122)        # grey status dot
+# Shrink the window to this fraction of the screen's area on startup and dock
+# it to the top-left corner. Pinning above other windows is Windows-only.
+WINDOW_SCREEN_FRACTION = 1 / 16
+WINDOW_ALWAYS_ON_TOP = True
+# How often to renew the topmost claim, in frames (~30 fps, so ~2s).
+TOPMOST_REASSERT_FRAMES = 60
 
-PANEL_ALPHA = 0.62                  # opacity of the flat panels
+# BGR colours (OpenCV order). Cool neutral greys + one restrained accent.
+COLOR_PANEL = (22, 20, 18)          # near-black panel fill
+COLOR_PANEL_BORDER = (74, 68, 62)   # hairline panel border
+COLOR_STROKE = (104, 100, 96)       # muted grey (control zone, inactive)
+COLOR_STROKE_ACTIVE = (198, 178, 148)  # accent-tinted (control zone, tracking)
+COLOR_TEXT = (242, 241, 240)
+COLOR_TEXT_DIM = (158, 154, 150)
+COLOR_TEXT_FAINT = (116, 112, 108)  # section labels, keycap glyphs
+COLOR_CURSOR = (242, 241, 240)      # near-white cursor mark
+COLOR_ACCENT = (196, 162, 112)      # muted steel blue, used sparingly
+COLOR_OK = (126, 186, 134)          # muted green status dot
+COLOR_IDLE = (110, 108, 112)        # grey status dot
+COLOR_DIVIDER = (52, 48, 44)        # hairline rule inside panels
 
-# Concise gesture legend.
-HINT_TEXT = ("Thumb: move    Point: click    Two fingers: scroll    "
-             "Flat swipe  down/up/left = min/restore/switch    "
-             "Shaka: new chat    Cross hands: exit")
+PANEL_ALPHA = 0.80                  # opacity of the flat panels
+SHADOW_ALPHA = 0.28                 # soft drop shadow behind panels
+
+# Gesture legend shown in the collapsible side menu (Tab to toggle).
+GESTURE_LEGEND = (
+    ("Thumb", "Move cursor"),
+    ("Point", "Click"),
+    ("Two fingers", "Scroll"),
+    ("Swipe down", "Minimize"),
+    ("Swipe up", "Restore"),
+    ("Swipe left", "Switch window"),
+    ("Shaka", "New chat"),
+    ("Cross hands", "Exit"),
+)
 
 # Feedback timings (seconds).
 CLICK_FLASH_S = 0.16

@@ -4,9 +4,10 @@ __pycache__/
 *.egg-info/
 .eggs/
 
-# Builds
+# Builds (packaging/build.py writes into both)
 build/
 dist/
+*.spec.bak
 
 # Virtual envs
 .venv/
