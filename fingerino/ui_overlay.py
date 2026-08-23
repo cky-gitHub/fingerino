@@ -13,7 +13,9 @@ regardless of camera resolution. Design the layout against roughly 480x270.
 
 from __future__ import annotations
 
+import sys
 import time
+from pathlib import Path
 
 import cv2
 import numpy as np
@@ -31,6 +33,60 @@ _HAND_CONNECTIONS = (
 )
 _PALM_POINTS = (0, 5, 9, 13, 17)
 _SCROLL_POINTS = (8, 12)   # index + middle fingertips
+
+# Sketch icons for the gesture tutorial page, keyed by the same icon id used
+# for the per-gesture enabled/disabled state in main.py.
+_GESTURE_ICON_FILES = {
+    "thumb": "01-move-cursor.png",
+    "point": "02-click.png",
+    "point_hold": "03-drag.png",
+    "two_finger": "04-scroll.png",
+    "flat_down": "05-minimize.png",
+    "flat_up": "06-restore.png",
+    "flat_left": "07-switch-window.png",
+    "shaka": "08-new-chat.png",
+    "cross": "09-exit.png",
+}
+
+
+def _assets_dir() -> Path:
+    """Locate assets/tutorial-gestures/, in dev or a PyInstaller bundle.
+
+    Mirrors hand_tracker._default_model_path()'s sys.frozen / _MEIPASS check
+    -- packaging/fingerino.spec bundles the folder at "assets/tutorial-gestures".
+    """
+    if getattr(sys, "frozen", False):
+        return Path(getattr(sys, "_MEIPASS", "")) / "assets" / "tutorial-gestures"
+    return Path(__file__).resolve().parent.parent / "assets" / "tutorial-gestures"
+
+
+def _prep_icon(im: Image.Image, box: int) -> Image.Image:
+    """Crop to the drawn content, re-pad it square, then resize to box x box.
+
+    The source PNGs are 1024x1024 with wildly different amounts of empty
+    margin (a tall pointing finger vs. two wide crossed arms) -- without this
+    they'd read at inconsistent sizes next to each other in the row grid.
+    """
+    bbox = im.getbbox()
+    if bbox:
+        im = im.crop(bbox)
+    w, h = im.size
+    side = max(w, h)
+    pad = max(1, side // 10)
+    canvas = Image.new("RGBA", (side + pad * 2, side + pad * 2), (0, 0, 0, 0))
+    canvas.paste(im, ((canvas.width - w) // 2, (canvas.height - h) // 2), im)
+    return canvas.resize((box, box), Image.LANCZOS)
+
+
+def _flat_tint(im: Image.Image, rgb: tuple[int, int, int]) -> Image.Image:
+    """Flatten to a single-colour silhouette, keeping the source alpha shape.
+
+    Used for the disabled-row icon -- same "everything faint" language as
+    the dimmed title text next to it.
+    """
+    solid = Image.new("RGBA", im.size, (*rgb, 255))
+    solid.putalpha(im.split()[3])
+    return solid
 
 
 def _bgr2rgb(c: tuple[int, int, int]) -> tuple[int, int, int]:
@@ -103,17 +159,27 @@ class UIOverlay:
         self._scale = max(1.0, ui_scale)
         self.f_status = _load_font(self.s(13), bold=True)
         self.f_mode = _load_font(self.s(12), bold=True)
-        self.f_head = _load_font(self.s(10), bold=True)
+        self.f_title = _load_font(self.s(15), bold=True)
         self.f_row = _load_font(self.s(11))
-        self.f_row_b = _load_font(self.s(11), bold=True)
+        self.f_row_b = _load_font(self.s(16), bold=True)  # gesture-guide row titles
         self.f_key = _load_font(self.s(9), bold=True)
         self.f_exit = _load_font(self.s(14), bold=True)
         self.f_toast = _load_font(self.s(12), bold=True)
         self.f_debug = _load_font(self.s(10))
         self._flashes: list[tuple[int, int, float]] = []
         self._toasts: list[tuple[str, float]] = []
-        # queued PIL text draws for the single compositing pass
+        # queued PIL text draws and icon pastes for the single compositing pass
         self._texts: list[tuple] = []
+        self._icons: list[tuple[Image.Image, int, int]] = []
+
+        icon_box = self.s(self._ICON_BOX)
+        assets = _assets_dir()
+        self._gesture_icons: dict[str, tuple[Image.Image, Image.Image]] = {}
+        for icon_id, fname in _GESTURE_ICON_FILES.items():
+            raw = Image.open(assets / fname).convert("RGBA")
+            normal = _prep_icon(raw, icon_box)
+            muted = _flat_tint(normal, _bgr2rgb(config.COLOR_TEXT_FAINT))
+            self._gesture_icons[icon_id] = (normal, muted)
 
     def s(self, v: float) -> int:
         """Scale a design-space size into frame-space."""
@@ -155,9 +221,15 @@ class UIOverlay:
     def toast(self, text: str) -> None:
         self._toasts.append((text, time.time()))
 
-    # -- text queue ----------------------------------------------------------
+    # -- text / icon queues ---------------------------------------------------
     def _text(self, xy, s, font, fill, anchor="la", alpha=255) -> None:
         self._texts.append((xy, s, font, (*_bgr2rgb(fill), alpha), anchor))
+
+    def _icon(self, img: Image.Image, x: int, y: int) -> None:
+        """Queue a pre-scaled RGBA icon, top-left at (x, y), for the same
+        single compositing pass as the queued text.
+        """
+        self._icons.append((img, x, y))
 
     # -- elements ------------------------------------------------------------
     def _draw_zone(self, frame, zone, tracking) -> None:
@@ -227,6 +299,34 @@ class UIOverlay:
             _chevron(frame, cx, cy - self.s(8) + i * step, sz, False,
                      config.COLOR_ACCENT, th)
 
+    def _card(self, frame, x1, y1, x2, y2, r) -> None:
+        """Solid rounded tile for one gesture row.
+
+        Deliberately not _panel(): that does a soft drop shadow via a
+        full-frame copy + blend, cheap once per HUD but not nine times a
+        frame for a small tile. This is flat fill + hairline border only,
+        which cv2 already scopes to the rect -- no full-frame work at all.
+        """
+        _rounded_rect(frame, x1, y1, x2, y2, r, config.COLOR_CARD, -1)
+        _rounded_rect(frame, x1, y1, x2, y2, r, config.COLOR_PANEL_BORDER, self.s(1))
+
+    def _draw_toggle(self, frame, cx, cy, on: bool) -> None:
+        """Small iOS-style switch: filled+accent track with the knob at the
+        right when on, hollow dim track with the knob at the left when off.
+        """
+        tw, th_ = self.s(20), self.s(11)
+        x1, y1 = cx - tw // 2, cy - th_ // 2
+        x2, y2 = cx + tw // 2, cy + th_ // 2
+        if on:
+            _rounded_rect(frame, x1, y1, x2, y2, th_ // 2, config.COLOR_ACCENT, -1)
+        else:
+            _rounded_rect(frame, x1, y1, x2, y2, th_ // 2, config.COLOR_DIVIDER, -1)
+            _rounded_rect(frame, x1, y1, x2, y2, th_ // 2, config.COLOR_PANEL_BORDER,
+                          self.s(1))
+        knob_r = self.s(4)
+        knob_x = x2 - knob_r - self.s(1) if on else x1 + knob_r + self.s(1)
+        cv2.circle(frame, (knob_x, cy), knob_r, config.COLOR_TEXT, -1, cv2.LINE_AA)
+
     def _draw_status(self, frame, tracking, mode_label) -> None:
         """One compact bar: state dot + label, then the live mode after a rule."""
         pad, gap = self.s(9), self.s(7)
@@ -272,72 +372,118 @@ class UIOverlay:
         x2, y1 = w - pad, h // 2 - tab_h // 2
         return x2 - tab_w, y1, x2, y1 + tab_h
 
-    def _panel_rect(self, w: int, h: int) -> tuple[int, int, int, int, int]:
-        pad = self.s(10)
-        head_h = self.s(24)
-        panel_h = min(head_h + self.s(19) * len(config.GESTURE_LEGEND)
-                      + self.s(22) + self.s(6), h - pad * 2)
-        x2 = w - pad
-        x1 = x2 - self.s(186)
-        y1 = max(pad, (h - panel_h) // 2)
-        return x1, y1, x2, y1 + panel_h, head_h
+    def _page_rect(self, w: int, h: int) -> tuple[int, int, int, int]:
+        m = self.s(12)
+        return m, m, w - m, h - m
+
+    def _page_close_rect(self, w: int, h: int) -> tuple[int, int, int, int]:
+        """Header close-control hit box, shared by drawing and hit-testing."""
+        x1, y1, x2, _ = self._page_rect(w, h)
+        pad = self.s(14)
+        cy = y1 + pad
+        kx = x2 - pad - self.s(64)
+        return kx, cy - self.s(9), x2 - pad, cy + self.s(9)
 
     def menu_toggle_rect(self, w: int, h: int, open_: bool) -> tuple[int, int, int, int]:
-        """Clickable rect (frame coords) that toggles the menu.
+        """Clickable rect (frame coords) that toggles the gesture guide.
 
         Padded outward: the collapsed tab is only ~16 design px wide, which is
         a fiddly target once the frame is scaled down into a small window.
         """
-        if not open_:
-            x1, y1, x2, y2 = self._tab_rect(w, h)
-        else:
-            px1, py1, px2, py2, head_h = self._panel_rect(w, h)
-            x1, y1, x2, y2 = px1, py1, px2, py1 + head_h  # header row
+        x1, y1, x2, y2 = (self._tab_rect(w, h) if not open_
+                          else self._page_close_rect(w, h))
         g = self.s(6)
         return x1 - g, y1 - g, x2 + g, y2 + g
 
-    def _draw_side_menu(self, frame, open_: bool) -> None:
-        """Collapsible gesture legend docked to the right edge. Tab toggles it."""
-        h, w = frame.shape[:2]
+    # Grid constants shared between drawing and hit-testing, fixed design
+    # units per the note in _gesture_row_rect below.
+    _GRID_COLS = 2
+    _GRID_PAD = 14
+    _GRID_HEAD_GAP = 14
+    _GRID_TOP_GAP = 6
+    _ROW_H = 38
+    _COL_W = 205
+    _ICON_BOX = 30  # gesture sketch, square, design units
 
+    def _gesture_row_rect(self, w: int, h: int, index: int) -> tuple[int, int, int, int]:
+        """Frame-coords rect for gesture-tutorial row ``index``, shared by
+        drawing and hit-testing so a click always lands on what's drawn.
+        """
+        x1, y1, _, _ = self._page_rect(w, h)
+        ix1 = x1 + self.s(self._GRID_PAD)
+        head_cy = y1 + self.s(self._GRID_PAD)
+        rule_y = head_cy + self.s(self._GRID_HEAD_GAP)
+        grid_y1 = rule_y + self.s(self._GRID_TOP_GAP)
+        row_h, col_w = self.s(self._ROW_H), self.s(self._COL_W)
+        col, row = index % self._GRID_COLS, index // self._GRID_COLS
+        rx, ry = ix1 + col * col_w, grid_y1 + row * row_h
+        return rx, ry, rx + col_w, ry + row_h
+
+    def gesture_row_rects(self, w: int, h: int) -> list[tuple[int, int, int, int]]:
+        """All gesture-tutorial row rects, in config.GESTURE_TUTORIAL order."""
+        return [self._gesture_row_rect(w, h, i)
+                for i in range(len(config.GESTURE_TUTORIAL))]
+
+    def _draw_side_menu(self, frame, open_: bool, enabled=None) -> None:
+        """Collapsed: a small tab docked to the right edge. Open: the
+        full-page gesture guide. Tab (or a click) toggles it.
+        """
         if not open_:
+            h, w = frame.shape[:2]
             x1, y1, x2, y2 = self._tab_rect(w, h)
             self._panel(frame, x1, y1, x2, y2, r=self.s(5))
             _chevron_lr(frame, (x1 + x2) // 2, (y1 + y2) // 2, self.s(4), True,
                         config.COLOR_TEXT_DIM, self.s(1))
             return
+        self._draw_tutorial_page(frame, enabled)
 
-        legend = config.GESTURE_LEGEND
-        row_h = self.s(19)
-        x1, y1, x2, y2, head_h = self._panel_rect(w, h)
-        self._panel(frame, x1, y1, x2, y2, r=self.s(8))
+    def _draw_tutorial_page(self, frame, enabled) -> None:
+        """Full-page gesture guide: a rounded card per gesture, the sketch
+        on the left and one large title on the right -- sized to actually
+        read on a small preview window, not a legend squeezed into a strip.
 
-        ix1, ix2 = x1 + self.s(11), x2 - self.s(11)
+        Each card also carries a toggle switch: click a row to stop that
+        gesture from being recognised, without needing a separate settings
+        screen.
+        """
+        h, w = frame.shape[:2]
+        x1, y1, x2, y2 = self._page_rect(w, h)
+        self._panel(frame, x1, y1, x2, y2, r=self.s(10))
 
-        # Header + collapse affordance.
-        self._text((ix1, y1 + head_h // 2 - 1), "GESTURES", self.f_head,
-                   config.COLOR_TEXT_FAINT, anchor="lm")
-        _chevron_lr(frame, ix2 - self.s(3), y1 + head_h // 2, self.s(4), False,
-                    config.COLOR_TEXT_FAINT, self.s(1))
-        cv2.line(frame, (ix1, y1 + head_h), (ix2, y1 + head_h),
-                 config.COLOR_DIVIDER, self.s(1), cv2.LINE_AA)
+        pad = self.s(14)
+        ix1, ix2 = x1 + pad, x2 - pad
+        head_cy = y1 + pad
 
-        # Rows: gesture on the left, resulting action right-aligned.
-        ry = y1 + head_h
-        for gesture, action in legend:
-            cy = ry + row_h // 2 - 1
-            self._text((ix1, cy), gesture, self.f_row_b,
-                       config.COLOR_TEXT, anchor="lm")
-            self._text((ix2, cy), action, self.f_row,
-                       config.COLOR_TEXT_DIM, anchor="rm")
-            ry += row_h
-
-        # Footer: how to collapse it again.
-        cv2.line(frame, (ix1, ry + self.s(2)), (ix2, ry + self.s(2)),
-                 config.COLOR_DIVIDER, self.s(1), cv2.LINE_AA)
-        kw = self._keycap(frame, ix1, ry + self.s(7), "Tab", self.f_key)
-        self._text((ix1 + kw + self.s(6), ry + self.s(7) + self.s(7)), "hide",
+        self._text((ix1, head_cy), "GESTURES", self.f_title, config.COLOR_TEXT,
+                   anchor="lm")
+        kx1, ky1, kx2, ky2 = self._page_close_rect(w, h)
+        kw = self._keycap(frame, kx1, ky1, "Tab", self.f_key)
+        self._text((kx1 + kw + self.s(6), (ky1 + ky2) // 2 - 1), "close",
                    self.f_row, config.COLOR_TEXT_FAINT, anchor="lm")
+
+        rule_y = head_cy + self.s(self._GRID_HEAD_GAP)
+        cv2.line(frame, (ix1, rule_y), (ix2, rule_y), config.COLOR_DIVIDER,
+                 self.s(1), cv2.LINE_AA)
+
+        gap = self.s(2)  # gutter between adjacent cards
+        for i, (icon, title) in enumerate(config.GESTURE_TUTORIAL):
+            rx, ry, rx2, ry2 = self._gesture_row_rect(w, h, i)
+            on = enabled is None or enabled.get(icon, True)
+            row_h = ry2 - ry
+
+            self._card(frame, rx + gap, ry + gap, rx2 - gap, ry2 - gap, self.s(8))
+
+            icon_img = self._gesture_icons[icon][0 if on else 1]
+            icon_cy = ry + row_h // 2
+            icon_x = rx + self.s(10)
+            self._icon(icon_img, icon_x, icon_cy - icon_img.height // 2)
+
+            tx = rx + self.s(10) + icon_img.width + self.s(12)
+            title_color = config.COLOR_TEXT if on else config.COLOR_TEXT_FAINT
+            self._text((tx, icon_cy - 1), title, self.f_row_b,
+                       title_color, anchor="lm")
+
+            self._draw_toggle(frame, rx2 - self.s(18), icon_cy, on)
 
     def _draw_exit(self, frame, progress) -> None:
         h, w = frame.shape[:2]
@@ -381,9 +527,15 @@ class UIOverlay:
             for p in hand:
                 cv2.circle(frame, p, r, config.COLOR_STROKE_ACTIVE, -1, cv2.LINE_AA)
 
-    def _flush_text(self, frame) -> np.ndarray:
+    def _flush_overlay(self, frame) -> np.ndarray:
+        """Single PIL compositing pass: queued icon pastes, then queued text
+        drawn on top, both alpha-blended onto the frame in one round-trip.
+        """
         base = Image.fromarray(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)).convert("RGBA")
         layer = Image.new("RGBA", base.size, (0, 0, 0, 0))
+        for img, x, y in self._icons:
+            layer.paste(img, (x, y), img)
+        self._icons.clear()
         d = ImageDraw.Draw(layer)
         for xy, s, font, fill, anchor in self._texts:
             d.text(xy, s, font=font, fill=fill, anchor=anchor)
@@ -395,7 +547,7 @@ class UIOverlay:
     def draw(self, frame, *, tracking, mode="none", mode_label="", cursor_px=None,
              zone_px, hands_px=None, exit_progress=0.0, dragging=False,
              drag_progress=0.0, debug=False, fps=0.0,
-             menu_open=False) -> np.ndarray:
+             menu_open=False, gesture_enabled=None) -> np.ndarray:
         self._draw_zone(frame, zone_px, tracking)
 
         if debug and hands_px:
@@ -410,8 +562,12 @@ class UIOverlay:
 
         self._draw_flashes(frame)
 
-        self._draw_status(frame, tracking, mode_label)
-        self._draw_side_menu(frame, menu_open)
+        # The gesture guide takes over the whole frame like a modal, so the
+        # status pill (top-left) would otherwise poke out from behind its
+        # rounded corner.
+        if not menu_open:
+            self._draw_status(frame, tracking, mode_label)
+        self._draw_side_menu(frame, menu_open, gesture_enabled)
         if exit_progress > 0.0:
             self._draw_exit(frame, exit_progress)
         self._draw_toasts(frame)
@@ -421,4 +577,4 @@ class UIOverlay:
                        f"{fps:4.1f} fps   {mode}", self.f_debug,
                        config.COLOR_TEXT_FAINT, anchor="ld")
 
-        return self._flush_text(frame)
+        return self._flush_overlay(frame)

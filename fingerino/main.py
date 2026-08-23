@@ -143,6 +143,38 @@ def _finalize_window(name: str) -> tuple:
     return hwnd
 
 
+def _pin_topmost(name: str) -> None:
+    """Keep the HUD above other windows on macOS and Linux.
+
+    Windows goes through winui, which can renew the claim repeatedly without
+    stealing focus. Everywhere else OpenCV's own topmost property is the only
+    lever there is, and it only needs setting once. Without this the HUD sinks
+    behind whatever app you are controlling, which for this app is fatal to
+    the whole point of it.
+    """
+    if sys.platform.startswith("win") or not config.WINDOW_ALWAYS_ON_TOP:
+        return
+    try:
+        cv2.setWindowProperty(name, cv2.WND_PROP_TOPMOST, 1)
+    except Exception:
+        pass  # older OpenCV builds don't expose the property
+
+
+def _set_title_note(name: str, note: str | None) -> None:
+    """Show a status note in the title bar. macOS only.
+
+    The Windows build finds its own window by exact title to attach the icon
+    and the always-on-top handling, so renaming it there would break both.
+    """
+    if sys.platform != "darwin":
+        return
+    try:
+        cv2.setWindowTitle(
+            name, f"{config.WINDOW_NAME} — {note}" if note else config.WINDOW_NAME)
+    except Exception:
+        pass
+
+
 def _fatal(message: str) -> None:
     """Report a startup failure the user would otherwise never see.
 
@@ -182,7 +214,8 @@ def main() -> int:
 
     # macOS drops synthetic input on the floor until Accessibility is granted,
     # so ask before the window opens rather than looking broken afterwards.
-    if not args.no_move and not macui.accessibility_trusted():
+    needs_access = not args.no_move and not macui.accessibility_trusted()
+    if needs_access:
         macui.warn_missing_accessibility()
 
     cap = _open_camera(args.camera)
@@ -209,11 +242,22 @@ def main() -> int:
     cv2.namedWindow(config.WINDOW_NAME, cv2.WINDOW_NORMAL)
     cv2.resizeWindow(config.WINDOW_NAME, win_w, win_h)
     cv2.moveWindow(config.WINDOW_NAME, 0, 0)
+    if needs_access:
+        # A toast lasts a second; this has to stay visible, because until it
+        # is fixed the app tracks perfectly and controls nothing.
+        _set_title_note(config.WINDOW_NAME, "no Accessibility permission yet")
 
     # Mutable so the mouse callback can flip it. OpenCV reports click
     # coordinates in *image* space, the same space the overlay draws in, so
     # the rect from the overlay can be hit-tested directly.
-    ui = {"menu_open": False, "w": config.CAMERA_WIDTH, "h": config.CAMERA_HEIGHT}
+    ui = {
+        "menu_open": False,
+        "w": config.CAMERA_WIDTH,
+        "h": config.CAMERA_HEIGHT,
+        # Per-gesture on/off, keyed by the icon id used throughout
+        # GESTURE_TUTORIAL. Session-only -- resets to all-enabled on restart.
+        "gesture_enabled": {icon: True for icon, _ in config.GESTURE_TUTORIAL},
+    }
 
     def _on_mouse(event, x, y, flags, param):
         if event != cv2.EVENT_LBUTTONDOWN:
@@ -221,10 +265,19 @@ def main() -> int:
         x1, y1, x2, y2 = overlay.menu_toggle_rect(ui["w"], ui["h"], ui["menu_open"])
         if x1 <= x <= x2 and y1 <= y <= y2:
             ui["menu_open"] = not ui["menu_open"]
+            return
+        if ui["menu_open"]:
+            rects = overlay.gesture_row_rects(ui["w"], ui["h"])
+            for (icon, _), (rx1, ry1, rx2, ry2) in zip(config.GESTURE_TUTORIAL, rects):
+                if rx1 <= x <= rx2 and ry1 <= y <= ry2:
+                    ui["gesture_enabled"][icon] = not ui["gesture_enabled"][icon]
+                    return
 
     cv2.setMouseCallback(config.WINDOW_NAME, _on_mouse)
 
     hwnd = None
+    pinned = False
+    last_access_t = 0.0
     overlay.toast("Press Tab for gestures")
 
     last_ts_ms = 0
@@ -258,6 +311,7 @@ def main() -> int:
             cursor_px = None
             hands_px = None
             out = engine.update(hands, now)
+            enabled = ui["gesture_enabled"]
 
             if tracking:
                 hands_px = [[(int(p[0] * w), int(p[1] * h)) for p in hand]
@@ -265,24 +319,24 @@ def main() -> int:
                 tip = hands[0][config.CURSOR_LANDMARK]  # thumb tip
                 cursor_px = (int(tip[0] * w), int(tip[1] * h))
 
-                if out.mode == "move" and drive:
+                if out.mode == "move" and drive and enabled["thumb"]:
                     cursor.update(tip[0], tip[1], now)
-                elif out.mode == "scroll" and drive:
+                elif out.mode == "scroll" and drive and enabled["two_finger"]:
                     cursor.scroll(out.scroll_steps)
 
-                if out.minimize:
+                if out.minimize and enabled["flat_down"]:
                     if drive:
                         system_actions.minimize_all()
                     overlay.toast("Minimized")
-                if out.restore:
+                if out.restore and enabled["flat_up"]:
                     if drive:
                         system_actions.restore_all()
                     overlay.toast("Restored")
-                if out.switch_window:
+                if out.switch_window and enabled["flat_left"]:
                     if drive:
                         system_actions.switch_window()
                     overlay.toast("Switch window")
-                if out.new_chat:
+                if out.new_chat and enabled["shaka"]:
                     if drive:
                         system_actions.open_ai_chat()
                     overlay.toast("New chat")
@@ -293,17 +347,20 @@ def main() -> int:
             # pending click and a live drag outlive the hand by the trigger's
             # grace window, so their edges have to get through even with
             # nothing tracked.
-            if out.click:
+            if out.click and enabled["point"]:
                 if drive:
                     cursor.click()
                 if cursor_px is not None:
                     overlay.flash_click(cursor_px)
-            if out.press and drive:
+            if out.press and drive and enabled["point_hold"]:
                 cursor.press()
+            # Not gated by enabled["point_hold"]: release() is a safe no-op
+            # if the button isn't held, but if Drag gets disabled mid-hold
+            # this still has to go through or the button is stuck down.
             if out.release and drive:
                 cursor.release()
 
-            if out.exit:
+            if out.exit and enabled["cross"]:
                 print("[fingerino] exit gesture — closing.")
                 break
 
@@ -321,9 +378,25 @@ def main() -> int:
                 debug=args.debug,
                 fps=fps,
                 menu_open=ui["menu_open"],
+                gesture_enabled=ui["gesture_enabled"],
             )
 
             cv2.imshow(config.WINDOW_NAME, frame)
+            if not pinned:
+                # imshow is what actually creates the OS window, so the
+                # property can only be set from here on.
+                _pin_topmost(config.WINDOW_NAME)
+                pinned = True
+
+            if needs_access and now - last_access_t >= 2.0:
+                last_access_t = now
+                if macui.accessibility_trusted():
+                    # macOS only hands the permission to a freshly started
+                    # process, so say so rather than pretending it works now.
+                    needs_access = False
+                    _set_title_note(config.WINDOW_NAME, "restart to enable control")
+                    overlay.toast("Permission granted — restart Fingerino")
+
             if hwnd is None:
                 hwnd = _finalize_window(config.WINDOW_NAME)
                 last_topmost_t = now

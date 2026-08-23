@@ -218,6 +218,42 @@ def _notarize(path: str) -> None:
     run(["xcrun", "stapler", "staple", path])
 
 
+# Sits in the disk image next to the app. Gatekeeper stops people at a point
+# where there is nothing on screen telling them what to do, and this is the
+# last surface we control before that happens.
+_DMG_READ_ME = """Fingerino — first launch on macOS
+
+1. Drag Fingerino into the Applications folder next to it.
+
+2. Open your Applications folder and double-click Fingerino.
+   macOS will refuse the first time, saying it cannot verify the app.
+   Click Done — this is expected, see the note at the bottom.
+
+3. Open System Settings > Privacy & Security. Scroll to the bottom,
+   press "Open Anyway" next to Fingerino, and confirm.
+
+4. Allow access to the camera when asked.
+
+5. Fingerino will explain that it also needs Accessibility permission,
+   which is what lets it move your cursor. Switch Fingerino on in
+   System Settings > Privacy & Security > Accessibility.
+
+6. Quit Fingerino and open it again. macOS only grants permissions to a
+   freshly started app, so this last step is not optional.
+
+Then hold a hand in front of the camera, inside the rectangle drawn on
+the video. Thumb moves the cursor, Tab lists every gesture, Esc quits.
+
+Why the warning in step 2: this app is not signed with an Apple Developer
+certificate, which costs $99 a year. It is open source — you can read every
+line at https://github.com/cky-gitHub/fingerino. Video is processed on your
+Mac and never leaves it.
+
+Still blocked after step 3? Open Terminal and run:
+    xattr -dr com.apple.quarantine /Applications/Fingerino.app
+"""
+
+
 def package_macos() -> list[str]:
     app = os.path.join(DIST, "Fingerino.app")
     if not os.path.isdir(app):
@@ -234,6 +270,9 @@ def package_macos() -> list[str]:
     # flattening them invalidates the signature.
     shutil.copytree(app, os.path.join(stage, "Fingerino.app"), symlinks=True)
     os.symlink("/Applications", os.path.join(stage, "Applications"))
+    with open(os.path.join(stage, "Read Me First.txt"), "w",
+              encoding="utf-8") as fh:
+        fh.write(_DMG_READ_ME)
 
     if os.path.exists(dmg):
         os.remove(dmg)

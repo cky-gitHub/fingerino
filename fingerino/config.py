@@ -136,21 +136,25 @@ COLOR_ACCENT = (196, 162, 112)      # muted steel blue, used sparingly
 COLOR_OK = (126, 186, 134)          # muted green status dot
 COLOR_IDLE = (110, 108, 112)        # grey status dot
 COLOR_DIVIDER = (52, 48, 44)        # hairline rule inside panels
+COLOR_CARD = (34, 31, 28)           # one step up from COLOR_PANEL, for tiles
 
 PANEL_ALPHA = 0.80                  # opacity of the flat panels
 SHADOW_ALPHA = 0.28                 # soft drop shadow behind panels
 
-# Gesture legend shown in the collapsible side menu (Tab to toggle).
-GESTURE_LEGEND = (
-    ("Thumb", "Move cursor"),
-    ("Point", "Click"),
-    ("Hold point", "Drag"),
-    ("Two fingers", "Scroll"),
-    ("Swipe down", "Minimize"),
-    ("Swipe up", "Restore"),
-    ("Swipe left", "Switch window"),
-    ("Shaka", "New chat"),
-    ("Cross hands", "Exit"),
+# Gesture guide shown as a full page (Tab to toggle). Each row is
+# (icon id, what it does) -- the icon id looks up both the sketch in
+# assets/tutorial-gestures/ (see UIOverlay._GESTURE_ICON_FILES) and the
+# per-gesture enabled/disabled toggle state (see main.py).
+GESTURE_TUTORIAL = (
+    ("thumb", "Move cursor"),
+    ("point", "Click"),
+    ("point_hold", "Drag"),
+    ("two_finger", "Scroll"),
+    ("flat_down", "Minimize"),
+    ("flat_up", "Restore"),
+    ("flat_left", "Switch window"),
+    ("shaka", "New chat"),
+    ("cross", "Exit"),
 )
 
 # Feedback timings (seconds).

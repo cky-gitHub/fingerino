@@ -26,11 +26,16 @@ _SETTINGS_URL = (
 )
 
 _MESSAGE = (
-    "Fingerino needs Accessibility permission to move the cursor and send "
-    "keyboard shortcuts.\n\n"
-    "Open System Settings > Privacy & Security > Accessibility, switch "
-    "Fingerino on, then start it again.\n\n"
-    "Until then it will track your hand but not control anything."
+    "Fingerino needs Accessibility permission before it can move the cursor "
+    "or send keyboard shortcuts. Without it you will see your hand tracked "
+    "perfectly while nothing on screen responds.\n\n"
+    "1. Open System Settings > Privacy & Security > Accessibility\n"
+    "2. Switch Fingerino on. If it is not in the list yet, press + and pick "
+    "Fingerino from your Applications folder\n"
+    "3. Quit Fingerino and open it again — macOS only grants the permission "
+    "to a freshly started app\n\n"
+    "Fingerino only reads your camera locally. Nothing is recorded and "
+    "nothing is uploaded."
 )
 
 

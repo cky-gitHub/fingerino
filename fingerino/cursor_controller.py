@@ -67,6 +67,29 @@ class _OneEuro:
         return x_hat
 
 
+def _screen_size_macos() -> tuple[int, int] | None:
+    """Main display size from CoreGraphics, or None if it can't be read.
+
+    Asked of the OS directly rather than through a GUI toolkit, because the
+    packaged app ships no toolkit at all.
+    """
+    import ctypes
+
+    try:
+        cg = ctypes.cdll.LoadLibrary(
+            "/System/Library/Frameworks/CoreGraphics.framework/CoreGraphics")
+        cg.CGMainDisplayID.restype = ctypes.c_uint32
+        cg.CGDisplayPixelsWide.restype = ctypes.c_size_t
+        cg.CGDisplayPixelsWide.argtypes = [ctypes.c_uint32]
+        cg.CGDisplayPixelsHigh.restype = ctypes.c_size_t
+        cg.CGDisplayPixelsHigh.argtypes = [ctypes.c_uint32]
+        display = cg.CGMainDisplayID()
+        w, h = int(cg.CGDisplayPixelsWide(display)), int(cg.CGDisplayPixelsHigh(display))
+        return (w, h) if w > 0 and h > 0 else None
+    except Exception:
+        return None
+
+
 def _get_screen_size() -> tuple[int, int]:
     """Physical primary-screen resolution, DPI-aware on Windows."""
     if sys.platform.startswith("win"):
@@ -84,7 +107,14 @@ def _get_screen_size() -> tuple[int, int]:
         user32 = ctypes.windll.user32
         return int(user32.GetSystemMetrics(0)), int(user32.GetSystemMetrics(1))
 
-    # Fallback for non-Windows: best effort via tkinter.
+    if sys.platform == "darwin":
+        size = _screen_size_macos()
+        if size:
+            return size
+
+    # Last resort for Linux: tkinter. Deliberately not the macOS path — the
+    # packaged app excludes tkinter, so there it would always fall through to
+    # the hardcoded guess below and map the cursor to the wrong screen.
     try:
         import tkinter
 

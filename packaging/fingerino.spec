@@ -11,6 +11,7 @@ Environment switches (set by build.py):
     FINGERINO_CONSOLE=1   keep a console window attached (debug builds)
 """
 
+import glob
 import os
 import sys
 
@@ -53,6 +54,12 @@ else:
         "hand_landmarker.task is missing — run packaging/build.py, which "
         "fetches it before building."
     )
+
+# Gesture-guide sketches, loaded at runtime by ui_overlay._assets_dir().
+_gesture_icons = glob.glob(os.path.join(ROOT, "assets", "tutorial-gestures", "*.png"))
+if not _gesture_icons:
+    raise SystemExit("assets/tutorial-gestures/*.png is missing")
+datas += [(f, os.path.join("assets", "tutorial-gestures")) for f in _gesture_icons]
 
 _ico = os.path.join(ROOT, "build", "icons", "fingerino.ico")
 _icns = os.path.join(ROOT, "build", "icons", "fingerino.icns")
