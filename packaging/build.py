@@ -133,10 +133,19 @@ def run_pyinstaller(console: bool) -> None:
 # ---------------------------------------------------------------------------
 
 def _find_iscc() -> str | None:
+    """Locate the Inno Setup compiler.
+
+    Its installer doesn't put itself on PATH, and it can land machine-wide or
+    per-user depending on how it was installed (winget picks per-user), so all
+    three usual homes get checked.
+    """
     found = shutil.which("iscc") or shutil.which("ISCC")
     if found:
         return found
-    for base in (os.environ.get("ProgramFiles(x86)"), os.environ.get("ProgramFiles")):
+    local = os.environ.get("LOCALAPPDATA")
+    bases = [os.environ.get("ProgramFiles(x86)"), os.environ.get("ProgramFiles"),
+             os.path.join(local, "Programs") if local else None]
+    for base in bases:
         if not base:
             continue
         for ver in ("6", "5"):

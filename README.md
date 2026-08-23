@@ -1,8 +1,9 @@
 # 🖐️ Fingerino
 
 **Control your computer with webcam hand gestures.** Move the cursor with your
-thumb, click by pointing, scroll with two fingers, and run window shortcuts with
-a wave — no extra hardware, just your laptop's built-in camera.
+thumb, click by pointing, drag by holding the point, scroll with two fingers,
+and run window shortcuts with a wave — no extra hardware, just your laptop's
+built-in camera.
 
 ![python](https://img.shields.io/badge/python-3.10%2B-blue)
 ![license](https://img.shields.io/badge/license-MIT-green)
@@ -19,13 +20,21 @@ Euro Filter so the cursor glides instead of shaking.
 | Gesture | Action |
 | --- | --- |
 | **Thumb** tip | Move the cursor |
-| **Point** — index out, middle in | Left click (flick the index out) |
+| **Point** — index out, middle in | Left click (flick the index out and back) |
+| **Hold the point** ~0.5s | Drag — the button goes down and stays down |
 | **Two fingers** — index + middle out | Scroll (move the hand up / down) |
 | **Flat hand**, swipe **down** | Minimize everything (show desktop) |
 | **Flat hand**, swipe **up** | Restore the windows |
 | **Flat hand**, swipe **left** | Switch window (Alt+Tab) |
 | **Shaka** — thumb + pinky out ("call me") | Open a new AI chat (Alt+Space) |
 | **Cross both hands** into an "X", hold | Quit the app |
+
+A quick point is a plain click and holds nothing down — so the cursor drift of
+your hand changing shape can't smear it into a stray drag. Keep the index out
+for about half a second and the reticle's ring fills round like a clock; once
+it closes, the button is down and stays down until you relax the finger, so
+you can drag a file, a slider or a selection. The reticle turns gold while the
+button is held.
 
 Rest with your fingers relaxed to stay in plain **Move** mode. The status pill
 (top-left) turns green when a hand is tracked; the pill beside it shows the
@@ -124,8 +133,8 @@ gesture, or close the window) to quit. Keep your hand inside the on-screen
 | --- | --- |
 | `main.py` | Camera loop; wires everything together, routes modes. |
 | `hand_tracker.py` | Wraps `HandLandmarker` (LIVE_STREAM); returns landmarks per hand. |
-| `cursor_controller.py` | Thumb → screen mapping, One Euro smoothing, `pynput` move + scroll. |
-| `gesture_detector.py` | `GestureEngine`: posture → mode + click / scroll / swipe / shaka / exit. |
+| `cursor_controller.py` | Thumb → screen mapping, One Euro smoothing, `pynput` move + button + scroll. |
+| `gesture_detector.py` | `GestureEngine`: posture → mode + click / drag / scroll / swipe / shaka / exit. |
 | `system_actions.py` | OS keyboard shortcuts (minimize / restore / Alt+Tab / new chat). |
 | `ui_overlay.py` | All HUD drawing (flat, professional theme). |
 | `config.py` | Every threshold, the control-zone rect, smoothing + gesture params. |
@@ -135,11 +144,16 @@ gesture, or close the window) to quit. Keep your hand inside the on-screen
 
 Each frame, `GestureEngine` classifies the primary hand's posture into a
 **mode** and emits discrete events. Every posture test is built from distances
-to the wrist, so it's rotation-invariant. Debouncing keeps triggers honest:
-clicks fire only on the rising edge of the point posture, are rate-limited, and
-won't fire until the finger has been seen released once (so starting or
-re-entering the frame mid-gesture is silent). Destructive gestures (Exit, and
-the shaka new-chat) must be **held** briefly to guard against accidents.
+to the wrist, so it's rotation-invariant. Debouncing keeps triggers honest: a
+point is resolved when it *ends* — short means a click, longer than
+`DRAG_HOLD_S` means the button goes down for a drag — it's rate-limited, and
+nothing fires until the finger has been seen released once (so starting or
+re-entering the frame mid-gesture is silent). Letting go is debounced too, with
+a longer grace once the button is actually down, so a mis-landmarked frame
+can't drop a drag halfway. The button is released from a single path that also
+runs when the hand leaves the frame and on every shutdown, and it never stays
+down longer than `DRAG_MAX_S`. Destructive gestures (Exit, and the shaka
+new-chat) must be **held** briefly to guard against accidents.
 
 ## Tuning
 
@@ -150,7 +164,10 @@ Everything worth adjusting is in [`fingerino/config.py`](fingerino/config.py)
   `ONE_EURO_BETA` (higher = snappier when moving fast).
 - **Reach** — `CONTROL_ZONE_*_MARGIN` shrink/grow the mapped rectangle.
 - **Cursor source** — `CURSOR_LANDMARK` (`4` = thumb tip, `8` = index tip).
-- **Clicks** — `CLICK_COOLDOWN_S`, `INDEX_EXTEND_MARGIN`.
+- **Clicks + drag** — `DRAG_HOLD_S` (how long a point must be held before it
+  becomes a drag instead of a click), `CLICK_COOLDOWN_S`,
+  `INDEX_EXTEND_MARGIN`, `CLICK_RELEASE_GRACE_S` / `DRAG_RELEASE_GRACE_S` (how
+  forgiving each is about dropped frames), `DRAG_MAX_S`.
 - **Scroll** — `SCROLL_GAIN` (speed), `SCROLL_INVERT` (flip direction).
 - **Flat-hand swipes** — `WAVE_MIN_TRAVEL` / `WAVE_WINDOW_S` (how deliberate),
   `MINIMIZE_ACTION` (`show_desktop` = Win+D, `minimize_all` = Win+M).
@@ -159,7 +176,8 @@ Everything worth adjusting is in [`fingerino/config.py`](fingerino/config.py)
 
 ## Platform support
 
-The core — cursor move, click, scroll — works on **Windows, macOS, and Linux**.
+The core — cursor move, click, drag, scroll — works on **Windows, macOS, and
+Linux**.
 Installers are published for Windows and macOS; Linux is a source install.
 
 The **window-management gestures** send different keys per platform, in
@@ -217,7 +235,7 @@ tuning thresholds.
 ## Building the installers
 
 ```bash
-pip install -e . pyinstaller
+pip install -e ".[build]"
 python packaging/build.py            # current platform, into dist/release/
 python packaging/build.py --console  # same, but with a console for tracebacks
 ```

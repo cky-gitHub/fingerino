@@ -59,10 +59,23 @@ FINGER_EXTEND_MARGIN = 0.08
 THUMB_EXTEND_MARGIN = 0.02
 
 # ---------------------------------------------------------------------------
-# Click gesture: point (index out, middle in)
+# Click + drag gesture: point (index out, middle in)
 # ---------------------------------------------------------------------------
 INDEX_EXTEND_MARGIN = 0.10          # how firmly the index must straighten
-CLICK_COOLDOWN_S = 0.30             # min time between clicks
+CLICK_COOLDOWN_S = 0.30             # min time between button actions
+
+# A point that ends before this is an ordinary click and never puts the button
+# down -- so the cursor drift of the hand changing shape can't smear a click
+# into a stray one-pixel drag. Keep the index out for longer and the button
+# goes down and stays down, which drags exactly like a held mouse button.
+DRAG_HOLD_S = 0.50                  # how long to hold the point before it drags
+# Debounce for letting go, with a longer window once the button is actually
+# down: a click arriving a frame late is cheap, dropping a drag halfway is not.
+CLICK_RELEASE_GRACE_S = 0.06        # ~2 frames -- swallows a mis-landmarked one
+DRAG_RELEASE_GRACE_S = 0.15
+# Safety valve: never hold the button longer than this, whatever the tracker
+# thinks it sees. A stuck mouse button is far worse than a lost drag.
+DRAG_MAX_S = 20.0
 
 # ---------------------------------------------------------------------------
 # Scroll gesture: two fingers (index + middle out)
@@ -104,8 +117,11 @@ WINDOW_NAME = "Fingerino"
 # it to the top-left corner. Pinning above other windows is Windows-only.
 WINDOW_SCREEN_FRACTION = 1 / 16
 WINDOW_ALWAYS_ON_TOP = True
-# How often to renew the topmost claim, in frames (~30 fps, so ~2s).
-TOPMOST_REASSERT_FRAMES = 60
+# How often to renew the topmost claim, in seconds of wall-clock time. Paced
+# by real time rather than frame count so it stays responsive even when
+# MediaPipe's per-frame cost pulls the loop well under 30 fps -- a frame-count
+# cadence would otherwise let another window sit in front for several seconds.
+TOPMOST_REASSERT_S = 0.5
 
 # BGR colours (OpenCV order). Cool neutral greys + one restrained accent.
 COLOR_PANEL = (22, 20, 18)          # near-black panel fill
@@ -128,6 +144,7 @@ SHADOW_ALPHA = 0.28                 # soft drop shadow behind panels
 GESTURE_LEGEND = (
     ("Thumb", "Move cursor"),
     ("Point", "Click"),
+    ("Hold point", "Drag"),
     ("Two fingers", "Scroll"),
     ("Swipe down", "Minimize"),
     ("Swipe up", "Restore"),

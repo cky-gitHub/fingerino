@@ -34,6 +34,10 @@ dependencies = [
     "pillow>=10.0",
 ]
 
+# Everything packaging/build.py needs on top of the runtime deps.
+[project.optional-dependencies]
+build = ["pyinstaller>=6.0"]
+
 [project.urls]
 Homepage = "https://github.com/cky-gitHub/fingerino"
 Repository = "https://github.com/cky-gitHub/fingerino"

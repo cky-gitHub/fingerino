@@ -171,16 +171,27 @@ class UIOverlay:
             cv2.line(frame, (cx, cy), (cx + dx * ln, cy), color, th, cv2.LINE_AA)
             cv2.line(frame, (cx, cy), (cx, cy + dy * ln), color, th, cv2.LINE_AA)
 
-    def _draw_cursor(self, frame, pos) -> None:
-        """Crosshair reticle — reads as a precision pointer, not a blob."""
+    def _draw_cursor(self, frame, pos, dragging=False, progress=0.0) -> None:
+        """Crosshair reticle — reads as a precision pointer, not a blob.
+
+        While the button is held the reticle takes the accent colour and its
+        centre fills in, so a drag is never a silent state. Before that, the
+        ring fills round like a clock to show the point arming into a drag —
+        the same "hold this" language the exit gesture uses.
+        """
         cx, cy = int(pos[0]), int(pos[1])
         r, gap, arm, th = self.s(9), self.s(3), self.s(5), self.s(1)
-        cv2.circle(frame, (cx, cy), r, config.COLOR_CURSOR, th, cv2.LINE_AA)
+        color = config.COLOR_ACCENT if dragging else config.COLOR_CURSOR
+        cv2.circle(frame, (cx, cy), r, color, th, cv2.LINE_AA)
+        if progress > 0.0:
+            cv2.ellipse(frame, (cx, cy), (r, r), -90, 0, 360 * min(progress, 1.0),
+                        config.COLOR_ACCENT, self.s(2), cv2.LINE_AA)
         for dx, dy in ((1, 0), (-1, 0), (0, 1), (0, -1)):
             cv2.line(frame, (cx + dx * (r + gap), cy + dy * (r + gap)),
                      (cx + dx * (r + gap + arm), cy + dy * (r + gap + arm)),
-                     config.COLOR_CURSOR, th, cv2.LINE_AA)
-        cv2.circle(frame, (cx, cy), self.s(1), config.COLOR_CURSOR, -1, cv2.LINE_AA)
+                     color, th, cv2.LINE_AA)
+        cv2.circle(frame, (cx, cy), self.s(4) if dragging else self.s(1), color,
+                   -1, cv2.LINE_AA)
 
     def _draw_flashes(self, frame) -> None:
         now = time.time()
@@ -382,15 +393,16 @@ class UIOverlay:
 
     # -- public --------------------------------------------------------------
     def draw(self, frame, *, tracking, mode="none", mode_label="", cursor_px=None,
-             zone_px, hands_px=None, exit_progress=0.0, debug=False,
-             fps=0.0, menu_open=False) -> np.ndarray:
+             zone_px, hands_px=None, exit_progress=0.0, dragging=False,
+             drag_progress=0.0, debug=False, fps=0.0,
+             menu_open=False) -> np.ndarray:
         self._draw_zone(frame, zone_px, tracking)
 
         if debug and hands_px:
             self._draw_skeleton(frame, hands_px)
 
         if mode == "move" and tracking and cursor_px is not None:
-            self._draw_cursor(frame, cursor_px)
+            self._draw_cursor(frame, cursor_px, dragging, drag_progress)
         elif mode == "scroll" and hands_px:
             self._draw_scroll(frame, self._tips_px(hands_px[0]))
         elif mode == "flat" and hands_px:

@@ -3,6 +3,8 @@
 Gestures (one hand unless noted):
     Move      thumb tip drives the cursor
     Click     point (index out, middle in)
+    Drag      hold the point ~0.5s — the button then stays down until the
+              finger relaxes
     Scroll    two fingers out (index + middle), move the hand up / down
     Minimize  flat hand swiped down    Restore  flat hand swiped up
     Switch    flat hand swiped left (Alt+Tab)
@@ -227,8 +229,8 @@ def main() -> int:
 
     last_ts_ms = 0
     fps = 0.0
-    frame_i = 0
     prev_t = time.perf_counter()
+    last_topmost_t = prev_t
 
     try:
         while True:
@@ -268,11 +270,6 @@ def main() -> int:
                 elif out.mode == "scroll" and drive:
                     cursor.scroll(out.scroll_steps)
 
-                if out.click:
-                    if drive:
-                        cursor.click()
-                    overlay.flash_click(cursor_px)
-
                 if out.minimize:
                     if drive:
                         system_actions.minimize_all()
@@ -292,6 +289,20 @@ def main() -> int:
             else:
                 cursor.reset()
 
+            # Button edges are handled outside the tracking branch: both a
+            # pending click and a live drag outlive the hand by the trigger's
+            # grace window, so their edges have to get through even with
+            # nothing tracked.
+            if out.click:
+                if drive:
+                    cursor.click()
+                if cursor_px is not None:
+                    overlay.flash_click(cursor_px)
+            if out.press and drive:
+                cursor.press()
+            if out.release and drive:
+                cursor.release()
+
             if out.exit:
                 print("[fingerino] exit gesture — closing.")
                 break
@@ -305,6 +316,8 @@ def main() -> int:
                 zone_px=_zone_px(w, h),
                 hands_px=hands_px,
                 exit_progress=out.exit_progress,
+                dragging=out.dragging,
+                drag_progress=out.drag_progress,
                 debug=args.debug,
                 fps=fps,
                 menu_open=ui["menu_open"],
@@ -313,11 +326,15 @@ def main() -> int:
             cv2.imshow(config.WINDOW_NAME, frame)
             if hwnd is None:
                 hwnd = _finalize_window(config.WINDOW_NAME)
-            elif config.WINDOW_ALWAYS_ON_TOP and frame_i % config.TOPMOST_REASSERT_FRAMES == 0:
-                # Other apps promoting themselves to topmost can bury us, so
-                # the claim is renewed periodically rather than set just once.
+                last_topmost_t = now
+            elif (config.WINDOW_ALWAYS_ON_TOP
+                  and now - last_topmost_t >= config.TOPMOST_REASSERT_S):
+                # Other apps promoting themselves to topmost -- or, if one is
+                # also marked always-on-top, simply being clicked -- can bury
+                # us, so the claim is renewed on a real-time cadence rather
+                # than set just once.
                 winui.raise_above_all(hwnd)
-            frame_i += 1
+                last_topmost_t = now
 
             dt = now - prev_t
             prev_t = now
@@ -332,6 +349,9 @@ def main() -> int:
             if cv2.getWindowProperty(config.WINDOW_NAME, cv2.WND_PROP_VISIBLE) < 1:
                 break
     finally:
+        # First thing on every exit path, including the exit gesture and any
+        # crash: never leave the user's mouse button held down.
+        cursor.release()
         cap.release()
         cv2.destroyAllWindows()
         tracker.close()

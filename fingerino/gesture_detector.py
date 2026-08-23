@@ -5,7 +5,8 @@ discrete events each frame:
 
     posture              -> mode      -> action
     -----------------------------------------------------------------
-    index out, middle in -> move      -> drive cursor; a fresh point = click
+    index out, middle in -> move      -> drive cursor; a brief point clicks,
+                                         a held one presses and drags
     index + middle out   -> scroll    -> vertical fingertip motion scrolls
     flat hand (4 out)    -> flat      -> a downward wave minimises windows
     both hands crossed   -> exit      -> hold the "X" briefly to quit
@@ -20,11 +21,10 @@ Landmark reference: 0 wrist · 4 thumb tip · 5-8 index · 9-12 middle ·
 
 from __future__ import annotations
 
-import enum
 import math
 from collections import deque
 from dataclasses import dataclass
-from typing import Callable
+from typing import NamedTuple
 
 from . import config
 
@@ -88,7 +88,7 @@ def is_index_extended(lms: Landmarks) -> bool:
 
 
 def is_pointing(lms: Landmarks) -> bool:
-    """Index out, middle in — the click posture."""
+    """Index out, middle in — the click / drag posture."""
     return is_index_extended(lms) and not _extended(lms, _MIDDLE, config.FINGER_EXTEND_MARGIN)
 
 
@@ -155,36 +155,93 @@ def _cross_angle_deg(p1, p2, p3, p4) -> float:
 
 
 # ---------------------------------------------------------------------------
-# Rising-edge click trigger (debounced, armed only after a release)
+# Left-button trigger: a short point clicks, a held one presses and drags
 # ---------------------------------------------------------------------------
-class _State(enum.Enum):
-    READY = "READY"
-    HELD = "HELD"
+class ButtonEdges(NamedTuple):
+    click: bool = False         # a complete left click (a short point)
+    press: bool = False         # button down — a drag is starting
+    release: bool = False       # button up — the drag ended
 
 
-class ClickTrigger:
-    def __init__(self, predicate: Callable[[Landmarks], bool] = is_pointing) -> None:
-        self._predicate = predicate
-        self.state = _State.READY
-        self._last_t = -1e9
-        self._armed = False
+class DragTrigger:
+    """Turns the pointing posture into either a click or a press-and-hold drag.
 
-    def reset(self) -> None:
-        self.state = _State.READY
-        self._armed = False
+    A point that ends before ``DRAG_HOLD_S`` is an ordinary click, and nothing
+    is held down while it happens — pointing changes the shape of the hand,
+    which drifts the tracked fingertip, and a button held through that drift
+    is what turns an intended click into a stray drag. Keeping the index out
+    past the threshold is unambiguous, and only then does the button go down
+    and stay down until the finger relaxes.
 
-    def update(self, lms: Landmarks, now: float) -> bool:
-        active = self._predicate(lms)
-        if not active:
-            self._armed = True
-            self.state = _State.READY
-            return False
-        if self.state is _State.HELD:
-            return False
-        self.state = _State.HELD
-        if not self._armed or now - self._last_t < config.CLICK_COOLDOWN_S:
-            return False
+    Both edges are debounced, with a longer grace once the button is down: a
+    click arriving a frame late is cheap, dropping a drag halfway is not.
+    """
+
+    def __init__(self) -> None:
+        self.down = False
+        self._down_since = 0.0
+        self._on_since: float | None = None   # posture held since (None = off)
+        self._off_since: float | None = None  # posture broken since
+        self._last_t = -1e9                   # last click or release
+        # Ignore the posture until it has been seen broken once, so a hand
+        # that arrives already pointing doesn't fire on sight.
+        self._ignore = True
+
+    def progress(self, now: float) -> float:
+        """How far a pending point has come towards latching as a drag, 0..1."""
+        if self.down or self._ignore or self._on_since is None:
+            return 0.0
+        return min(1.0, (now - self._on_since) / max(config.DRAG_HOLD_S, 1e-6))
+
+    def update(self, active: bool, now: float) -> ButtonEdges:
+        """Feed this frame's posture and get back the button edges it caused."""
+        if active:
+            self._off_since = None
+            if self._ignore:
+                return ButtonEdges()
+            if self.down:
+                if now - self._down_since < config.DRAG_MAX_S:
+                    return ButtonEdges()
+                # Safety valve: nothing legitimate holds this long, so the
+                # posture is stuck (a frozen hand, a persistent mis-read).
+                # Let go, and ignore it until it genuinely breaks.
+                return ButtonEdges(release=self._end(now, ignore=True))
+            if self._on_since is None:
+                self._on_since = now
+                return ButtonEdges()
+            if (now - self._on_since >= config.DRAG_HOLD_S
+                    and now - self._last_t >= config.CLICK_COOLDOWN_S):
+                self.down = True
+                self._down_since = now
+                return ButtonEdges(press=True)
+            return ButtonEdges()
+
+        # Posture gone: whatever it was can start fresh next time.
+        self._ignore = False
+        if self._on_since is None and not self.down:
+            return ButtonEdges()
+        if self._off_since is None:
+            self._off_since = now
+        grace = (config.DRAG_RELEASE_GRACE_S if self.down
+                 else config.CLICK_RELEASE_GRACE_S)
+        if now - self._off_since < grace:
+            return ButtonEdges()
+        if self.down:
+            return ButtonEdges(release=self._end(now))
+
+        # A point that ended before the threshold: an ordinary click.
+        self._on_since = self._off_since = None
+        if now - self._last_t < config.CLICK_COOLDOWN_S:
+            return ButtonEdges()
         self._last_t = now
+        return ButtonEdges(click=True)
+
+    def _end(self, now: float, ignore: bool = False) -> bool:
+        """Drop the button and close out the episode. Always True — an edge."""
+        self.down = False
+        self._on_since = self._off_since = None
+        self._last_t = now
+        self._ignore = ignore
         return True
 
 
@@ -195,7 +252,11 @@ class ClickTrigger:
 class GestureOutput:
     mode: str = "none"          # none | move | scroll | flat | shaka | exit
     mode_label: str = ""
-    click: bool = False
+    click: bool = False         # a short point — a discrete left click
+    press: bool = False         # left button just went down (drag starting)
+    release: bool = False       # left button just came back up (drag ended)
+    dragging: bool = False      # button currently held
+    drag_progress: float = 0.0  # 0..1 while a point is arming into a drag
     scroll_steps: int = 0
     minimize: bool = False      # flat swipe down
     restore: bool = False       # flat swipe up
@@ -207,7 +268,7 @@ class GestureOutput:
 
 class GestureEngine:
     def __init__(self) -> None:
-        self._click = ClickTrigger(is_pointing)
+        self._drag = DragTrigger()
         self._scroll_prev_y: float | None = None
         self._scroll_acc = 0.0
         self._swipe: deque[tuple[float, float, float]] = deque()  # (t, x, y)
@@ -218,7 +279,12 @@ class GestureEngine:
         self._last_shaka_t = -1e9
 
     def reset(self) -> None:
-        self._click.reset()
+        """Forget posture history.
+
+        The button trigger is deliberately left alone: it is fed every frame
+        from :meth:`update`, so losing the hand goes through the same grace
+        window as relaxing the finger instead of dropping a drag instantly.
+        """
         self._scroll_prev_y = None
         self._scroll_acc = 0.0
         self._swipe.clear()
@@ -285,14 +351,33 @@ class GestureEngine:
     # -- main entry ----------------------------------------------------------
     def update(self, hands: list[Landmarks], now: float) -> GestureOutput:
         out = GestureOutput()
+        pointing = self._classify(hands, now, out)
+
+        # The button is driven from exactly one place, so every way of leaving
+        # the posture — relaxing the finger, switching to another gesture,
+        # losing the hand — takes the same release path and none of them can
+        # strand it down.
+        out.click, out.press, out.release = self._drag.update(pointing, now)
+        out.dragging = self._drag.down
+        out.drag_progress = self._drag.progress(now)
+        if out.dragging and out.mode == "move":
+            out.mode_label = "Drag"
+        return out
+
+    def _classify(self, hands: list[Landmarks], now: float,
+                  out: GestureOutput) -> bool:
+        """Fill ``out`` with this frame's mode and events.
+
+        Returns whether the click/drag posture is being held, which is all the
+        button trigger needs from the classification.
+        """
         if not hands:
             self.reset()
-            return out
+            return False
 
         # Two-hand "X" takes priority and suppresses everything else.
         progress = self._check_exit(hands, now)
         if progress > 0.0:
-            self._click.reset()
             self._scroll_prev_y = None
             self._swipe.clear()
             self._reset_shaka()
@@ -300,13 +385,12 @@ class GestureEngine:
             out.mode_label = "Exit"
             out.exit_progress = progress
             out.exit = progress >= 1.0
-            return out
+            return False
 
         primary = hands[0]
 
         # Flat open hand -> directional swipes.
         if is_flat_hand(primary):
-            self._click.reset()
             self._scroll_prev_y = None
             self._reset_shaka()
             out.mode = "flat"
@@ -321,24 +405,22 @@ class GestureEngine:
             elif direction == "left":
                 out.switch_window = True
                 out.mode_label = "Switch"
-            return out
+            return False
 
         self._swipe.clear()
 
         # Two fingers -> scroll.
         if is_two_finger(primary):
-            self._click.reset()
             self._reset_shaka()
             out.mode = "scroll"
             out.mode_label = "Scroll"
             out.scroll_steps = self._scroll(primary)
-            return out
+            return False
 
         self._scroll_prev_y = None
 
         # Shaka sign -> new AI chat (held briefly to avoid accidents).
         if is_shaka(primary):
-            self._click.reset()
             out.mode = "shaka"
             out.mode_label = "New chat"
             if self._shaka_start is None:
@@ -349,12 +431,11 @@ class GestureEngine:
                 out.new_chat = True
                 self._shaka_fired = True
                 self._last_shaka_t = now
-            return out
+            return False
 
         self._reset_shaka()
 
-        # Default: move + click.
+        # Default: move, and point to click / hold the point to drag.
         out.mode = "move"
         out.mode_label = "Move"
-        out.click = self._click.update(primary, now)
-        return out
+        return is_pointing(primary)

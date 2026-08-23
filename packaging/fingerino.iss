@@ -38,8 +38,6 @@ UninstallDisplayName={#MyAppName}
 Compression=lzma2/max
 SolidCompression=yes
 WizardStyle=modern
-; Keeps the taskbar identity matching what fingerino/winui.py sets at runtime.
-AppUserModelID=cky.fingerino
 
 [Languages]
 Name: "english"; MessagesFile: "compiler:Default.isl"

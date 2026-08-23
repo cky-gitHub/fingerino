@@ -1,5 +1,8 @@
 """Maps the tracked fingertip to a screen coordinate, smooths it with a
 One Euro Filter, and drives the OS cursor via pynput.
+
+The left button is exposed both ways: a one-shot ``click`` for a quick point,
+and ``press`` / ``release`` for a held one, which is what drags.
 """
 
 from __future__ import annotations
@@ -111,6 +114,10 @@ class CursorController:
         # Last smoothed screen position (for click location + HUD).
         self.last_screen: tuple[int, int] | None = None
 
+        # Whether the left button is currently held. Tracked here so releases
+        # are idempotent and shutdown can let go unconditionally.
+        self.pressed = False
+
     def reset(self) -> None:
         """Drop filter history — call when the hand is lost so the cursor does
         not lurch when tracking resumes elsewhere."""
@@ -151,7 +158,21 @@ class CursorController:
         return ix, iy
 
     def click(self) -> None:
+        """One discrete left click. Nothing is left held down."""
         self._mouse.click(Button.left, 1)
+
+    def press(self) -> None:
+        """Hold the left button down. Moving from here drags."""
+        if not self.pressed:
+            self._mouse.press(Button.left)
+            self.pressed = True
+
+    def release(self) -> None:
+        """Let the left button go. A no-op if it isn't held, so it is safe to
+        call on shutdown or from any error path."""
+        if self.pressed:
+            self._mouse.release(Button.left)
+            self.pressed = False
 
     def scroll(self, steps: int) -> None:
         """Vertical wheel scroll; positive = up, negative = down."""

@@ -66,9 +66,14 @@ a = Analysis(
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
-    # Dev-only and GUI-toolkit packages that nothing in the app imports.
+    # Dev-only and GUI-toolkit packages nothing here imports, plus two of
+    # MediaPipe's optional dependencies that collect_all drags in (~15 MB).
+    # matplotlib is NOT in this list on purpose: `import mediapipe` pulls in
+    # mediapipe.python.solutions, which imports it, so dropping it turns
+    # every launch into an ImportError.
     excludes=["tkinter", "PyQt5", "PyQt6", "PySide2", "PySide6",
-              "IPython", "pytest", "setuptools", "pip"],
+              "IPython", "pytest", "setuptools", "pip",
+              "pandas", "sounddevice"],
     noarchive=False,
     optimize=0,
 )
