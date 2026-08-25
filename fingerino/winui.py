@@ -22,6 +22,7 @@ if _IS_WIN:
 _GWL_STYLE = -16
 _WS_MAXIMIZEBOX = 0x00010000
 _WS_THICKFRAME = 0x00040000
+_WS_CAPTION = 0x00C00000
 
 _SWP_NOSIZE = 0x0001
 _SWP_NOMOVE = 0x0002
@@ -127,6 +128,42 @@ def lock_size(hwnd) -> None:
                    _SWP_NOMOVE | _SWP_NOSIZE | _SWP_NOACTIVATE | _SWP_FRAMECHANGED)
 
 
+def make_borderless(hwnd) -> None:
+    """Strip the title bar, leaving a plain client-area window.
+
+    WS_SYSMENU is deliberately left alone: it has no visible effect without
+    WS_CAPTION (there's no title bar left to host a system-menu icon on),
+    but Windows still checks it for Alt+F4 and the taskbar's right-click
+    "Close window" -- with no titlebar X left, that's the only OS-level
+    close affordance remaining, so it stays.
+
+    Called once at startup, alongside lock_size() -- before that, every
+    later cv2.resizeWindow() call (e.g. the gesture guide opening) operates
+    on a window whose non-client area is already gone, so window rect and
+    client rect are the same thing throughout the session.
+    """
+    u = _u()
+    if not (u and hwnd):
+        return
+    style = u.GetWindowLongW(hwnd, _GWL_STYLE)
+    u.SetWindowLongW(hwnd, _GWL_STYLE, style & ~_WS_CAPTION)
+    u.SetWindowPos(hwnd, None, 0, 0, 0, 0,
+                   _SWP_NOMOVE | _SWP_NOSIZE | _SWP_NOACTIVATE | _SWP_FRAMECHANGED)
+
+
+def resize_client(hwnd, w: int, h: int) -> None:
+    """Fallback if cv2.resizeWindow ever misbehaves on this borderless
+    window: sets the window rect directly. Safe to treat window rect as
+    client rect here specifically because make_borderless() has already
+    removed all non-client chrome -- no AdjustWindowRectEx dance needed,
+    unlike a normal bordered window.
+    """
+    u = _u()
+    if not (u and hwnd):
+        return
+    u.SetWindowPos(hwnd, None, 0, 0, w, h, _SWP_NOMOVE | _SWP_NOACTIVATE)
+
+
 def raise_above_all(hwnd) -> None:
     """(Re)assert topmost so the window stays visible over focused windows.
 
@@ -145,6 +182,91 @@ def raise_above_all(hwnd) -> None:
     HWND_TOPMOST = wintypes.HWND(-1)
     u.SetWindowPos(hwnd, HWND_TOPMOST, 0, 0, 0, 0,
                    _SWP_NOMOVE | _SWP_NOSIZE | _SWP_NOACTIVATE)
+
+
+def unpin(hwnd) -> None:
+    """Drop the topmost flag, undoing raise_above_all().
+
+    Deliberately the only thing the console-close handler in main.py calls:
+    SetWindowPos just posts to the window's own queue, so it's safe from a
+    thread other than the one that created the window -- unlike OpenCV or
+    camera teardown, which are not.
+    """
+    u = _u()
+    if not (u and hwnd):
+        return
+    HWND_NOTOPMOST = wintypes.HWND(-2)
+    u.SetWindowPos(hwnd, HWND_NOTOPMOST, 0, 0, 0, 0,
+                   _SWP_NOMOVE | _SWP_NOSIZE | _SWP_NOACTIVATE)
+
+
+_instance_mutex = None
+
+
+def acquire_single_instance(app_id: str) -> bool:
+    """Claim a named mutex; False means another instance already holds it.
+
+    A second launch left running behind the one you can see is the usual way
+    the topmost pin outlives what looks like "closing the app" -- the first
+    instance is still alive and still reasserting it. The mutex is owned by
+    the process and Windows releases it automatically on exit, including a
+    crash or a Task Manager kill, so there's nothing to release explicitly.
+    """
+    global _instance_mutex
+    if not _IS_WIN:
+        return True
+    try:
+        k = ctypes.WinDLL("kernel32", use_last_error=True)
+        k.CreateMutexW.restype = wintypes.HANDLE
+        k.CreateMutexW.argtypes = [ctypes.c_void_p, wintypes.BOOL, wintypes.LPCWSTR]
+        _instance_mutex = k.CreateMutexW(None, False, f"Local\\{app_id}")
+        if not _instance_mutex:
+            return True  # couldn't check -- don't block launch over it
+        ERROR_ALREADY_EXISTS = 183
+        return ctypes.get_last_error() != ERROR_ALREADY_EXISTS
+    except Exception:
+        return True
+
+
+_console_handler_ref = None
+
+
+def install_console_handler(callback) -> None:
+    """Run `callback` on console close, logoff, or shutdown.
+
+    None of those raise a Python exception, so the try/finally around the
+    main loop never runs for them -- only for a normal return, an uncaught
+    exception, or the exit gesture/Esc. Without this, closing the terminal
+    window leaves the HUD pinned topmost until Windows gets around to tearing
+    the process down.
+
+    The handler fires on a thread Windows creates for it, not the main
+    thread, so `callback` must stick to things that are safe cross-thread
+    (see unpin() above) rather than touching OpenCV or camera state.
+    """
+    global _console_handler_ref
+    if not _IS_WIN:
+        return
+    HANDLER_ROUTINE = ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.DWORD)
+
+    def _handler(_ctrl_type):
+        try:
+            callback()
+        except Exception:
+            pass
+        return False  # False: still let Windows' default handling proceed
+
+    # Keeping this reference alive is load-bearing -- ctypes callback
+    # trampolines are freed once nothing in Python still points at them, and
+    # Windows calling into freed memory later would crash the process.
+    _console_handler_ref = HANDLER_ROUTINE(_handler)
+    try:
+        k = ctypes.WinDLL("kernel32", use_last_error=True)
+        k.SetConsoleCtrlHandler.restype = wintypes.BOOL
+        k.SetConsoleCtrlHandler.argtypes = [HANDLER_ROUTINE, wintypes.BOOL]
+        k.SetConsoleCtrlHandler(_console_handler_ref, True)
+    except Exception:
+        pass
 
 
 if _IS_WIN:

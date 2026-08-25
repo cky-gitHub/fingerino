@@ -55,11 +55,17 @@ else:
         "fetches it before building."
     )
 
-# Gesture-guide sketches, loaded at runtime by ui_overlay._assets_dir().
+# Gesture-guide sketches and the bundled UI font, both loaded at runtime by
+# ui_overlay._asset_root().
 _gesture_icons = glob.glob(os.path.join(ROOT, "assets", "tutorial-gestures", "*.png"))
 if not _gesture_icons:
     raise SystemExit("assets/tutorial-gestures/*.png is missing")
 datas += [(f, os.path.join("assets", "tutorial-gestures")) for f in _gesture_icons]
+
+_fonts = glob.glob(os.path.join(ROOT, "assets", "fonts", "*.ttf"))
+if not _fonts:
+    raise SystemExit("assets/fonts/*.ttf is missing")
+datas += [(f, os.path.join("assets", "fonts")) for f in _fonts]
 
 _ico = os.path.join(ROOT, "build", "icons", "fingerino.ico")
 _icns = os.path.join(ROOT, "build", "icons", "fingerino.icns")

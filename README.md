@@ -27,6 +27,7 @@ Euro Filter so the cursor glides instead of shaking.
 | **Flat hand**, swipe **up** | Restore the windows |
 | **Flat hand**, swipe **left** | Switch window (Alt+Tab) |
 | **Shaka** — thumb + pinky out ("call me") | Open a new AI chat (Alt+Space) |
+| **Both palms up**, held still ~1s | Hold: pause every gesture — again to resume |
 | **Cross both hands** into an "X", hold | Quit the app |
 
 A quick point is a plain click and holds nothing down — so the cursor drift of
@@ -39,6 +40,14 @@ button is held.
 Rest with your fingers relaxed to stay in plain **Move** mode. The status pill
 (top-left) turns green when a hand is tracked; the pill beside it shows the
 current mode.
+
+**Hold** is the master switch, for when you want your hands back: raise both
+palms, keep them still for about a second, and everything stops driving the
+computer — the pill goes grey and reads *Paused*. Do it again and control comes
+back with exactly the gestures that were switched on before; pausing never
+changes what you picked in the guide. One open hand still swipes as usual, so
+the two never collide, and the countdown restarts if your palms drift, so a
+two-handed wave can't pause you by accident.
 
 ## Download
 
@@ -134,7 +143,7 @@ gesture, or close the window) to quit. Keep your hand inside the on-screen
 | `main.py` | Camera loop; wires everything together, routes modes. |
 | `hand_tracker.py` | Wraps `HandLandmarker` (LIVE_STREAM); returns landmarks per hand. |
 | `cursor_controller.py` | Thumb → screen mapping, One Euro smoothing, `pynput` move + button + scroll. |
-| `gesture_detector.py` | `GestureEngine`: posture → mode + click / drag / scroll / swipe / shaka / exit. |
+| `gesture_detector.py` | `GestureEngine`: posture → mode + click / drag / scroll / swipe / shaka / hold / exit. |
 | `system_actions.py` | OS keyboard shortcuts (minimize / restore / Alt+Tab / new chat). |
 | `ui_overlay.py` | All HUD drawing (flat, professional theme). |
 | `config.py` | Every threshold, the control-zone rect, smoothing + gesture params. |
@@ -155,6 +164,12 @@ runs when the hand leaves the frame and on every shutdown, and it never stays
 down longer than `DRAG_MAX_S`. Destructive gestures (Exit, and the shaka
 new-chat) must be **held** briefly to guard against accidents.
 
+Two-hand postures are resolved before anything else: crossed hands are Exit,
+two open palms are Hold, and both shut the one-hand paths out entirely — which
+is why raising both hands to pause can't wave a window away on the way up. Hold
+is a mode rather than a mass toggle, so the per-gesture switches in the guide
+are left untouched and resuming restores exactly the set that was live.
+
 ## Tuning
 
 Everything worth adjusting is in [`fingerino/config.py`](fingerino/config.py)
@@ -173,6 +188,8 @@ Everything worth adjusting is in [`fingerino/config.py`](fingerino/config.py)
   `MINIMIZE_ACTION` (`show_desktop` = Win+D, `minimize_all` = Win+M).
 - **Shaka** — `AI_CHAT_MODIFIER` + `AI_CHAT_KEY` set the hotkey it sends
   (default **Alt+Space**).
+- **Hold** — `HOLD_TOGGLE_S` (how long both palms must be up), `HOLD_MAX_DRIFT`
+  (how still they must be), `HOLD_COOLDOWN_S`.
 
 ## Platform support
 

@@ -9,6 +9,8 @@ Gestures (one hand unless noted):
     Minimize  flat hand swiped down    Restore  flat hand swiped up
     Switch    flat hand swiped left (Alt+Tab)
     New chat  shaka sign (thumb + pinky out)
+    Hold      both palms up, held still ~1s — pauses every gesture; do it
+              again to hand control back to exactly the same set
     Exit      cross both hands into an "X" and hold briefly
 
     fingerino            # normal, clean HUD          (or: python -m fingerino)
@@ -16,7 +18,8 @@ Gestures (one hand unless noted):
     fingerino --no-move  # track & show HUD but don't drive the OS
     fingerino --selftest # check the install without a camera, then exit
 
-Esc quits (so does the Exit gesture). Tab toggles the gesture legend panel.
+Tab opens/closes the gesture guide. Esc closes the guide if it's open,
+otherwise quits (so does the Exit gesture).
 """
 
 from __future__ import annotations
@@ -39,7 +42,7 @@ from . import winui
 from .cursor_controller import CursorController
 from .gesture_detector import GestureEngine
 from .hand_tracker import HandTracker, cache_dir
-from .ui_overlay import UIOverlay
+from .ui_overlay import UIOverlay, panel_scale_for
 
 
 def _selftest() -> int:
@@ -122,7 +125,7 @@ def _window_size(screen_w: int, screen_h: int) -> tuple[int, int]:
     return win_w, win_h
 
 
-def _finalize_window(name: str) -> tuple:
+def _finalize_window(name: str, client_w: int, client_h: int) -> tuple:
     """Apply icon, fixed size and always-on-top; return the HWND (or None).
 
     ``cv2.namedWindow`` only registers the window; the real OS window isn't
@@ -138,6 +141,12 @@ def _finalize_window(name: str) -> tuple:
     # store rather than the window icon, so both are set.
     winui.set_taskbar_icon(hwnd, ico, _APP_ID, config.WINDOW_NAME)
     winui.lock_size(hwnd)
+    winui.make_borderless(hwnd)
+    # Both of the above pass SWP_NOSIZE, so removing the caption and frame
+    # leaves the *window* rect untouched and the client area grows by what
+    # the chrome used to occupy — which stretches the 16:9 preview until
+    # something resizes the window again. Put the client area back.
+    winui.resize_client(hwnd, client_w, client_h)
     if config.WINDOW_ALWAYS_ON_TOP:
         winui.raise_above_all(hwnd)
     return hwnd
@@ -209,6 +218,14 @@ def main() -> int:
     if args.selftest:
         return _selftest()
 
+    if not winui.acquire_single_instance(_APP_ID):
+        # A second copy left running behind the one you meant to close is
+        # the usual reason the topmost pin outlives "closing the app".
+        message = "Fingerino is already running."
+        print(f"[fingerino] {message}", file=sys.stderr)
+        winui.alert(config.WINDOW_NAME, message)
+        return 0
+
     # Must precede window creation or the taskbar keeps python.exe's identity.
     winui.set_app_id(_APP_ID)
 
@@ -234,7 +251,24 @@ def main() -> int:
     # The frame is drawn at native camera resolution then shrunk to win_w by
     # imshow, so HUD sizes must be inflated by this ratio to stay legible.
     ui_scale = config.CAMERA_WIDTH / win_w
-    overlay = UIOverlay(ui_scale=ui_scale)
+    # The gesture panel scales separately, off the screen rather than the
+    # camera, so the expanded window is always guaranteed to fit on the
+    # display -- and drops to a single-line row density when there isn't the
+    # height for descriptions.
+    panel_scale, comfortable = panel_scale_for(cursor.screen_h, win_w, win_h)
+    overlay = UIOverlay(ui_scale=ui_scale, panel_scale=panel_scale,
+                        comfortable=comfortable)
+
+    # The gesture guide renders on its own canvas and gets composited below
+    # the camera preview when open, so the window has two sizes: this small
+    # collapsed one, and a taller/wider "expanded" one computed once here.
+    # expanded_layout()'s offsets are also reused below to place the panel's
+    # (also static) hit-rects in window coordinates.
+    layout = overlay.expanded_layout(win_w, win_h)
+    exp_w, exp_h = layout["size"]
+    panel_x, panel_y = layout["panel_xy"]
+    close_lx1, close_ly1, close_lx2, close_ly2 = overlay.panel_close_rect(win_w)
+    row_rects_local = overlay.panel_row_rects(win_w)
 
     print(f"[fingerino] screen {cursor.screen_w}x{cursor.screen_h} — "
           f"{'controlling OS' if drive else 'HUD only'}. Esc to quit.")
@@ -248,35 +282,73 @@ def main() -> int:
         _set_title_note(config.WINDOW_NAME, "no Accessibility permission yet")
 
     # Mutable so the mouse callback can flip it. OpenCV reports click
-    # coordinates in *image* space, the same space the overlay draws in, so
-    # the rect from the overlay can be hit-tested directly.
+    # coordinates in the space of whatever array was last shown -- the
+    # collapsed camera frame (always CAMERA_WIDTH x CAMERA_HEIGHT) or the
+    # expanded composite (always exp_w x exp_h) -- so the two sets of
+    # hit-rects below, precomputed once in those two fixed coordinate
+    # spaces, never need to be recomputed per frame.
     ui = {
         "menu_open": False,
-        "w": config.CAMERA_WIDTH,
-        "h": config.CAMERA_HEIGHT,
+        "tab_rect": overlay.collapsed_tab_rect(config.CAMERA_WIDTH, config.CAMERA_HEIGHT),
+        "close_rect": (close_lx1 + panel_x, close_ly1 + panel_y,
+                       close_lx2 + panel_x, close_ly2 + panel_y),
+        "row_rects": [(x1 + panel_x, y1 + panel_y, x2 + panel_x, y2 + panel_y)
+                      for x1, y1, x2, y2 in row_rects_local],
         # Per-gesture on/off, keyed by the icon id used throughout
         # GESTURE_TUTORIAL. Session-only -- resets to all-enabled on restart.
         "gesture_enabled": {icon: True for icon, _ in config.GESTURE_TUTORIAL},
+        # Which row (index into GESTURE_TUTORIAL) the pointer is over, and
+        # whether it's over the close button. The whole row has always been
+        # clickable; highlighting it is what makes that visible.
+        "hover_row": None,
+        "hover_close": False,
+        # The both-palms hold parks the whole session. Deliberately a mode of
+        # its own rather than switching every row off: the per-gesture
+        # choices above are left exactly as they were, so resuming brings
+        # back the set that was live and nothing else.
+        "paused": False,
     }
 
+    def _live(icon: str) -> bool:
+        """May this gesture act on this frame? Off if it's switched off in the
+        guide, and off for everything while the session is paused."""
+        return ui["gesture_enabled"][icon] and not ui["paused"]
+
+    def _hit(rect, x, y) -> bool:
+        x1, y1, x2, y2 = rect
+        return x1 <= x <= x2 and y1 <= y <= y2
+
     def _on_mouse(event, x, y, flags, param):
+        if event == cv2.EVENT_MOUSEMOVE:
+            if not ui["menu_open"]:
+                return
+            ui["hover_close"] = _hit(ui["close_rect"], x, y)
+            ui["hover_row"] = next(
+                (i for i, r in enumerate(ui["row_rects"]) if _hit(r, x, y)), None)
+            return
         if event != cv2.EVENT_LBUTTONDOWN:
             return
-        x1, y1, x2, y2 = overlay.menu_toggle_rect(ui["w"], ui["h"], ui["menu_open"])
-        if x1 <= x <= x2 and y1 <= y <= y2:
-            ui["menu_open"] = not ui["menu_open"]
+        if not ui["menu_open"]:
+            if _hit(ui["tab_rect"], x, y):
+                ui["menu_open"] = True
             return
-        if ui["menu_open"]:
-            rects = overlay.gesture_row_rects(ui["w"], ui["h"])
-            for (icon, _), (rx1, ry1, rx2, ry2) in zip(config.GESTURE_TUTORIAL, rects):
-                if rx1 <= x <= rx2 and ry1 <= y <= ry2:
-                    ui["gesture_enabled"][icon] = not ui["gesture_enabled"][icon]
-                    return
+        if _hit(ui["close_rect"], x, y):
+            ui["menu_open"] = False
+            return
+        for (icon, _), rect in zip(config.GESTURE_TUTORIAL, ui["row_rects"]):
+            if _hit(rect, x, y):
+                ui["gesture_enabled"][icon] = not ui["gesture_enabled"][icon]
+                return
 
     cv2.setMouseCallback(config.WINDOW_NAME, _on_mouse)
 
     hwnd = None
     pinned = False
+    # Covers an abrupt close (console X button, logoff, shutdown) that skips
+    # straight past the try/finally below -- reads the current `hwnd` via
+    # closure, so it stays correct once _finalize_window() sets it below.
+    winui.install_console_handler(lambda: winui.unpin(hwnd))
+    prev_menu_open = False
     last_access_t = 0.0
     overlay.toast("Press Tab for gestures")
 
@@ -295,7 +367,6 @@ def main() -> int:
             if config.FLIP_HORIZONTAL:
                 frame = cv2.flip(frame, 1)
             h, w = frame.shape[:2]
-            ui["w"], ui["h"] = w, h
 
             # Push frame for async detection with a strictly increasing timestamp.
             rgb = np.ascontiguousarray(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
@@ -311,7 +382,19 @@ def main() -> int:
             cursor_px = None
             hands_px = None
             out = engine.update(hands, now)
-            enabled = ui["gesture_enabled"]
+
+            # The master switch. Turning the pause *off* is never gated on
+            # the row's own toggle -- switching Hold off while paused would
+            # otherwise leave no gesture able to give control back.
+            if out.hold_toggle and (ui["paused"] or ui["gesture_enabled"]["both_flat"]):
+                ui["paused"] = not ui["paused"]
+                if ui["paused"]:
+                    # Never park the session with the button still down or a
+                    # stale filter waiting to snap the cursor on resume.
+                    if drive:
+                        cursor.release()
+                    cursor.reset()
+                overlay.toast("Paused — gestures off" if ui["paused"] else "Resumed")
 
             if tracking:
                 hands_px = [[(int(p[0] * w), int(p[1] * h)) for p in hand]
@@ -319,24 +402,24 @@ def main() -> int:
                 tip = hands[0][config.CURSOR_LANDMARK]  # thumb tip
                 cursor_px = (int(tip[0] * w), int(tip[1] * h))
 
-                if out.mode == "move" and drive and enabled["thumb"]:
+                if out.mode == "move" and drive and _live("thumb"):
                     cursor.update(tip[0], tip[1], now)
-                elif out.mode == "scroll" and drive and enabled["two_finger"]:
+                elif out.mode == "scroll" and drive and _live("two_finger"):
                     cursor.scroll(out.scroll_steps)
 
-                if out.minimize and enabled["flat_down"]:
+                if out.minimize and _live("flat_down"):
                     if drive:
                         system_actions.minimize_all()
                     overlay.toast("Minimized")
-                if out.restore and enabled["flat_up"]:
+                if out.restore and _live("flat_up"):
                     if drive:
                         system_actions.restore_all()
                     overlay.toast("Restored")
-                if out.switch_window and enabled["flat_left"]:
+                if out.switch_window and _live("flat_left"):
                     if drive:
                         system_actions.switch_window()
                     overlay.toast("Switch window")
-                if out.new_chat and enabled["shaka"]:
+                if out.new_chat and _live("shaka"):
                     if drive:
                         system_actions.open_ai_chat()
                     overlay.toast("New chat")
@@ -347,20 +430,21 @@ def main() -> int:
             # pending click and a live drag outlive the hand by the trigger's
             # grace window, so their edges have to get through even with
             # nothing tracked.
-            if out.click and enabled["point"]:
+            if out.click and _live("point"):
                 if drive:
                     cursor.click()
                 if cursor_px is not None:
                     overlay.flash_click(cursor_px)
-            if out.press and drive and enabled["point_hold"]:
+            if out.press and drive and _live("point_hold"):
                 cursor.press()
-            # Not gated by enabled["point_hold"]: release() is a safe no-op
-            # if the button isn't held, but if Drag gets disabled mid-hold
-            # this still has to go through or the button is stuck down.
+            # Not gated by _live("point_hold"): release() is a safe no-op if
+            # the button isn't held, but if Drag gets disabled -- or the
+            # session paused -- mid-hold this still has to go through or the
+            # button is stuck down.
             if out.release and drive:
                 cursor.release()
 
-            if out.exit and enabled["cross"]:
+            if out.exit and _live("cross"):
                 print("[fingerino] exit gesture — closing.")
                 break
 
@@ -378,10 +462,41 @@ def main() -> int:
                 debug=args.debug,
                 fps=fps,
                 menu_open=ui["menu_open"],
-                gesture_enabled=ui["gesture_enabled"],
+                paused=ui["paused"],
+                hold_progress=out.hold_progress,
             )
 
-            cv2.imshow(config.WINDOW_NAME, frame)
+            # The gesture guide has its own canvas and gets composited below
+            # the camera preview, so the window has to grow/shrink to fit --
+            # only on the open/close transition, not every frame.
+            if ui["menu_open"] != prev_menu_open:
+                tgt_w, tgt_h = ((exp_w, exp_h) if ui["menu_open"]
+                                else (win_w, win_h))
+                cv2.resizeWindow(config.WINDOW_NAME, tgt_w, tgt_h)
+                if hwnd:
+                    # Authoritative once the window is borderless: sets the
+                    # client area directly rather than trusting HighGUI's
+                    # idea of how much chrome to allow for.
+                    winui.resize_client(hwnd, tgt_w, tgt_h)
+                # Borderless + no resize grip means the window can't drift
+                # from here on its own, but reassert it defensively anyway.
+                cv2.moveWindow(config.WINDOW_NAME, 0, 0)
+                if not ui["menu_open"]:
+                    ui["hover_row"] = None
+                    ui["hover_close"] = False
+                prev_menu_open = ui["menu_open"]
+
+            if ui["menu_open"]:
+                cam_disp = cv2.resize(frame, (win_w, win_h), interpolation=cv2.INTER_AREA)
+                panel_img = overlay.render_gesture_panel(
+                    ui["gesture_enabled"], win_w,
+                    hover_row=ui["hover_row"], hover_close=ui["hover_close"],
+                    paused=ui["paused"])
+                shown = overlay.compose_expanded(cam_disp, panel_img, layout)
+            else:
+                shown = frame
+
+            cv2.imshow(config.WINDOW_NAME, shown)
             if not pinned:
                 # imshow is what actually creates the OS window, so the
                 # property can only be set from here on.
@@ -398,7 +513,7 @@ def main() -> int:
                     overlay.toast("Permission granted — restart Fingerino")
 
             if hwnd is None:
-                hwnd = _finalize_window(config.WINDOW_NAME)
+                hwnd = _finalize_window(config.WINDOW_NAME, win_w, win_h)
                 last_topmost_t = now
             elif (config.WINDOW_ALWAYS_ON_TOP
                   and now - last_topmost_t >= config.TOPMOST_REASSERT_S):
@@ -415,8 +530,11 @@ def main() -> int:
                 fps = 0.9 * fps + 0.1 * (1.0 / dt) if fps else (1.0 / dt)
 
             key = cv2.waitKey(1) & 0xFF
-            if key == 27:  # Esc
-                break
+            if key == 27:  # Esc: close the guide first if it's open, else quit
+                if ui["menu_open"]:
+                    ui["menu_open"] = False
+                else:
+                    break
             if key == 9:  # Tab
                 ui["menu_open"] = not ui["menu_open"]
             if cv2.getWindowProperty(config.WINDOW_NAME, cv2.WND_PROP_VISIBLE) < 1:

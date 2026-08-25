@@ -9,6 +9,7 @@ discrete events each frame:
                                          a held one presses and drags
     index + middle out   -> scroll    -> vertical fingertip motion scrolls
     flat hand (4 out)    -> flat      -> a downward wave minimises windows
+    both hands flat      -> hold      -> hold both palms still to pause
     both hands crossed   -> exit      -> hold the "X" briefly to quit
 
 All thresholds live in ``config``. Every posture test is built from distances
@@ -107,6 +108,16 @@ def is_flat_hand(lms: Landmarks) -> bool:
     """All four fingers extended — an open palm."""
     m = config.FINGER_EXTEND_MARGIN
     return all(_extended(lms, f, m) for f in _FOUR)
+
+
+def both_flat(hands: list[Landmarks]) -> bool:
+    """Two open palms — the pause posture.
+
+    One flat hand swipes and two of them pause, so this is checked first and
+    suppresses the swipes entirely: raising both hands can't wave a window
+    away on the way up, and the two gestures can never be read at once.
+    """
+    return len(hands) >= 2 and all(is_flat_hand(h) for h in hands[:2])
 
 
 def is_fist(lms: Landmarks) -> bool:
@@ -250,7 +261,7 @@ class DragTrigger:
 # ---------------------------------------------------------------------------
 @dataclass
 class GestureOutput:
-    mode: str = "none"          # none | move | scroll | flat | shaka | exit
+    mode: str = "none"          # none | move | scroll | flat | shaka | hold | exit
     mode_label: str = ""
     click: bool = False         # a short point — a discrete left click
     press: bool = False         # left button just went down (drag starting)
@@ -262,6 +273,8 @@ class GestureOutput:
     restore: bool = False       # flat swipe up
     switch_window: bool = False  # flat swipe left (Alt+Tab)
     new_chat: bool = False      # shaka sign
+    hold_toggle: bool = False   # both palms held still — pause / resume
+    hold_progress: float = 0.0  # 0..1 while both palms are being held
     exit: bool = False
     exit_progress: float = 0.0  # 0..1 while the X is being held
 
@@ -277,6 +290,11 @@ class GestureEngine:
         self._shaka_start: float | None = None
         self._shaka_fired = False
         self._last_shaka_t = -1e9
+        self._hold_start: float | None = None
+        self._hold_anchor: list[tuple[float, float]] | None = None
+        self._hold_off_since: float | None = None
+        self._hold_fired = False
+        self._last_hold_t = -1e9
 
     def reset(self) -> None:
         """Forget posture history.
@@ -284,17 +302,40 @@ class GestureEngine:
         The button trigger is deliberately left alone: it is fed every frame
         from :meth:`update`, so losing the hand goes through the same grace
         window as relaxing the finger instead of dropping a drag instantly.
+        The both-palms hold is left alone for the same reason -- it expires
+        through :meth:`_expire_hold`, not on the first frame that misses a
+        hand.
         """
         self._scroll_prev_y = None
         self._scroll_acc = 0.0
         self._swipe.clear()
         self._x_start = None
-        self._shaka_start = None
-        self._shaka_fired = False
+        self._reset_shaka()
 
     def _reset_shaka(self) -> None:
         self._shaka_start = None
         self._shaka_fired = False
+
+    def _reset_hold(self) -> None:
+        self._hold_start = None
+        self._hold_anchor = None
+        self._hold_off_since = None
+        self._hold_fired = False
+
+    def _expire_hold(self, now: float) -> None:
+        """Drop a pending hold once the posture has really gone.
+
+        Grace-windowed rather than immediate: a hand the tracker misses for a
+        frame or two is common enough that resetting on sight would make a
+        one-second hold hard to finish, and it is the same window that has to
+        pass before the gesture can toggle again.
+        """
+        if self._hold_start is None and not self._hold_fired:
+            return
+        if self._hold_off_since is None:
+            self._hold_off_since = now
+        elif now - self._hold_off_since >= config.HOLD_RELEASE_GRACE_S:
+            self._reset_hold()
 
     # -- sub-behaviours ------------------------------------------------------
     def _check_exit(self, hands: list[Landmarks], now: float) -> float:
@@ -310,6 +351,38 @@ class GestureEngine:
             return min(1.0, (now - self._x_start) / config.EXIT_HOLD_S)
         self._x_start = None
         return 0.0
+
+    def _check_hold(self, hands: list[Landmarks], now: float,
+                    out: GestureOutput) -> None:
+        """Count down the both-palms hold and emit the toggle when it lands.
+
+        The countdown restarts whenever a palm travels more than
+        ``HOLD_MAX_DRIFT``, so this really is "hold both hands up and wait"
+        rather than "have both hands open for a moment while doing something
+        else". It fires once per posture: the hands have to come down (or
+        stop being flat) before another toggle is possible, which is what
+        makes the same gesture pause and then resume.
+        """
+        self._hold_off_since = None
+        centers = [_palm_center(h) for h in hands[:2]]
+        if self._hold_start is None or self._drifted(centers):
+            self._hold_start = now
+            self._hold_anchor = centers
+        if self._hold_fired:
+            return
+        progress = min(1.0, (now - self._hold_start) / max(config.HOLD_TOGGLE_S, 1e-6))
+        out.hold_progress = progress
+        if progress >= 1.0 and now - self._last_hold_t > config.HOLD_COOLDOWN_S:
+            out.hold_toggle = True
+            out.hold_progress = 0.0
+            self._hold_fired = True
+            self._last_hold_t = now
+
+    def _drifted(self, centers: list[tuple[float, float]]) -> bool:
+        if self._hold_anchor is None or len(self._hold_anchor) != len(centers):
+            return True
+        return any(math.hypot(c[0] - a[0], c[1] - a[1]) > config.HOLD_MAX_DRIFT
+                   for c, a in zip(centers, self._hold_anchor))
 
     def _scroll(self, lms: Landmarks) -> int:
         y = scroll_point(lms)[1]
@@ -373,6 +446,7 @@ class GestureEngine:
         """
         if not hands:
             self.reset()
+            self._expire_hold(now)
             return False
 
         # Two-hand "X" takes priority and suppresses everything else.
@@ -381,12 +455,27 @@ class GestureEngine:
             self._scroll_prev_y = None
             self._swipe.clear()
             self._reset_shaka()
+            self._reset_hold()
             out.mode = "exit"
             out.mode_label = "Exit"
             out.exit_progress = progress
             out.exit = progress >= 1.0
             return False
 
+        # Both palms up and still -> pause / resume everything. Ahead of the
+        # flat-hand swipes because the postures overlap: one open hand is a
+        # swipe, two are the master switch, and the swipe path has to be shut
+        # out entirely or raising both hands would minimise a window first.
+        if both_flat(hands):
+            self._scroll_prev_y = None
+            self._swipe.clear()
+            self._reset_shaka()
+            out.mode = "hold"
+            out.mode_label = "Hold"
+            self._check_hold(hands, now, out)
+            return False
+
+        self._expire_hold(now)
         primary = hands[0]
 
         # Flat open hand -> directional swipes.

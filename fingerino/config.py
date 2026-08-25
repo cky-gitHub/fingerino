@@ -103,6 +103,22 @@ AI_CHAT_MODIFIER = "alt"            # alt | ctrl | cmd | shift
 AI_CHAT_KEY = "space"              # e.g. "space", or a letter like "j"
 
 # ---------------------------------------------------------------------------
+# Hold gesture: both palms up and still -> pause / resume every other gesture
+# ---------------------------------------------------------------------------
+# One flat hand swipes; two of them, held still, are the master switch. While
+# paused nothing drives the OS, and the same gesture hands control back with
+# exactly the set of gestures that was enabled before.
+HOLD_TOGGLE_S = 1.2                 # keep both palms up this long to toggle
+HOLD_COOLDOWN_S = 1.0               # min time between toggles
+# Debounce for the posture breaking, the same idea as the button trigger's:
+# MediaPipe drops the second hand for a frame often enough that resetting the
+# countdown on sight would make a one-second hold hard to actually finish.
+HOLD_RELEASE_GRACE_S = 0.20
+# Palm travel that restarts the countdown, as a fraction of the frame, so a
+# two-handed wave or a hand on its way somewhere can never add up to a pause.
+HOLD_MAX_DRIFT = 0.07
+
+# ---------------------------------------------------------------------------
 # Exit gesture: cross both hands into an "X"
 # ---------------------------------------------------------------------------
 EXIT_HOLD_S = 0.7                   # hold the X this long to quit (safety)
@@ -113,8 +129,11 @@ EXIT_MIN_ANGLE_DEG = 25.0           # the two hands must actually cross, not ali
 # ---------------------------------------------------------------------------
 WINDOW_NAME = "Fingerino"
 
-# Shrink the window to this fraction of the screen's area on startup and dock
-# it to the top-left corner. Pinning above other windows is Windows-only.
+# Shrink the (collapsed) window to this fraction of the screen's area on
+# startup and dock it to the top-left corner. The window grows to fit the
+# gesture guide when that's open (see UIOverlay.expanded_layout) and shrinks
+# back to this size when it closes. Pinning above other windows is
+# Windows-only.
 WINDOW_SCREEN_FRACTION = 1 / 16
 WINDOW_ALWAYS_ON_TOP = True
 # How often to renew the topmost claim, in seconds of wall-clock time. Paced
@@ -123,38 +142,112 @@ WINDOW_ALWAYS_ON_TOP = True
 # cadence would otherwise let another window sit in front for several seconds.
 TOPMOST_REASSERT_S = 0.5
 
-# BGR colours (OpenCV order). Cool neutral greys + one restrained accent.
-COLOR_PANEL = (22, 20, 18)          # near-black panel fill
-COLOR_PANEL_BORDER = (74, 68, 62)   # hairline panel border
-COLOR_STROKE = (104, 100, 96)       # muted grey (control zone, inactive)
-COLOR_STROKE_ACTIVE = (198, 178, 148)  # accent-tinted (control zone, tracking)
-COLOR_TEXT = (242, 241, 240)
-COLOR_TEXT_DIM = (158, 154, 150)
-COLOR_TEXT_FAINT = (116, 112, 108)  # section labels, keycap glyphs
-COLOR_CURSOR = (242, 241, 240)      # near-white cursor mark
-COLOR_ACCENT = (196, 162, 112)      # muted steel blue, used sparingly
-COLOR_OK = (126, 186, 134)          # muted green status dot
-COLOR_IDLE = (110, 108, 112)        # grey status dot
-COLOR_DIVIDER = (52, 48, 44)        # hairline rule inside panels
-COLOR_CARD = (34, 31, 28)           # one step up from COLOR_PANEL, for tiles
+# BGR colours (OpenCV order). Neutral greys throughout -- state is carried by
+# brightness, not hue. The one exception is the status dot on the camera HUD,
+# which stays green/grey because it reports a live condition rather than
+# decorating anything.
+COLOR_APP_BG = (13, 11, 11)         # window ground behind everything  #0B0B0D
+COLOR_PANEL = (22, 19, 19)          # gesture-panel surface            #131316
+COLOR_CARD = (30, 26, 26)           # one settings row                 #1A1A1E
+COLOR_CARD_HOVER = (40, 35, 35)     # the row under the pointer        #232328
+COLOR_PANEL_BORDER = (58, 51, 51)   # hairline border / rule           #33333A
+COLOR_DIVIDER = (58, 51, 51)        # hairline rule inside panels      #33333A
+
+COLOR_TEXT = (240, 237, 237)        # row label, panel title           #EDEDF0
+COLOR_TEXT_DIM = (163, 155, 155)    # descriptions, section headers    #9B9BA3
+COLOR_TEXT_FAINT = (101, 92, 92)    # a disabled row, faint icon tint  #5C5C65
+
+COLOR_STROKE = (125, 116, 116)      # control-zone brackets, idle      #74747D
+COLOR_STROKE_ACTIVE = (240, 237, 237)  # control-zone brackets, tracking
+COLOR_CURSOR = (240, 237, 237)      # cursor reticle
+COLOR_ACCENT = (240, 237, 237)      # was a gold accent; now near-white. Marks
+                                     # an active state -- a live drag, scroll
+                                     # chevrons, the exit progress bar.
+COLOR_OK = (126, 186, 134)          # muted green status dot (live state)
+COLOR_IDLE = (101, 92, 92)          # grey status dot
+
+# Toggle switch. "On" is a lit white track with a dark knob, so the armed
+# state reads from fill rather than from knob position alone.
+COLOR_TOGGLE_TRACK_ON = (240, 237, 237)   # #EDEDF0
+COLOR_TOGGLE_KNOB_ON = (22, 19, 19)       # #131316
+COLOR_TOGGLE_TRACK_OFF = (49, 43, 43)     # #2B2B31
+COLOR_TOGGLE_KNOB_OFF = (125, 116, 116)   # #74747D
 
 PANEL_ALPHA = 0.80                  # opacity of the flat panels
 SHADOW_ALPHA = 0.28                 # soft drop shadow behind panels
 
-# Gesture guide shown as a full page (Tab to toggle). Each row is
-# (icon id, what it does) -- the icon id looks up both the sketch in
-# assets/tutorial-gestures/ (see UIOverlay._GESTURE_ICON_FILES) and the
-# per-gesture enabled/disabled toggle state (see main.py).
-GESTURE_TUTORIAL = (
-    ("thumb", "Move cursor"),
-    ("point", "Click"),
-    ("point_hold", "Drag"),
-    ("two_finger", "Scroll"),
-    ("flat_down", "Minimize"),
-    ("flat_up", "Restore"),
-    ("flat_left", "Switch window"),
-    ("shaka", "New chat"),
-    ("cross", "Exit"),
+# ---------------------------------------------------------------------------
+# Gesture panel geometry, in design units
+# ---------------------------------------------------------------------------
+# Every value below is multiplied by the panel scale (see UIOverlay.fs and
+# ui_overlay.panel_scale_for), which is worked out once at startup from the
+# screen size. The panel therefore keeps its proportions everywhere instead
+# of being frozen in raw pixels -- the old fixed layout wanted 1182px of
+# height on every display, which overflows a 1080p screen and gets squashed.
+PANEL_DESIGN_W = 340                # width the type scale is designed against
+PANEL_PAD = 14                      # panel edge padding
+PANEL_HEADER_H = 40                 # title + subtitle block
+PANEL_SECTION_H = 28                # section label band
+PANEL_SECTION_GAP = 12              # between one section and the next
+PANEL_CARD_GAP = 4                  # between adjacent rows (Windows 11 spacing)
+PANEL_ROW_H_COMFORTABLE = 46        # two-line row: label + description
+PANEL_ROW_H_COMPACT = 34            # single-line row, label only
+PANEL_ICON = 30                     # gesture sketch, square
+PANEL_ICON_GAP = 10                 # sketch to label
+PANEL_CARD_PAD = 11                 # row's own left/right padding
+PANEL_RADIUS = 4                    # row corner radius
+PANEL_TOGGLE_W = 28
+PANEL_TOGGLE_H = 16
+
+PANEL_FONT_TITLE = 16               # "Gestures"
+PANEL_FONT_SUB = 11                 # "8 of 9 enabled"
+PANEL_FONT_SECTION = 12             # "Pointer"
+PANEL_FONT_LABEL = 13               # row label
+PANEL_FONT_DESC = 11                # row description
+
+# Screen height to leave free below the expanded window (taskbar + breathing
+# room) when working out how big the panel is allowed to be.
+PANEL_SCREEN_MARGIN = 48
+PANEL_SCALE_MIN = 0.85
+PANEL_SCALE_MAX = 2.5
+# Downscaling a 1024px line drawing to ~37px leaves its ~14px strokes at well
+# under a pixel, which washes them out; this multiplies the resized alpha to
+# put the weight back without blurring.
+PANEL_ICON_ALPHA_GAIN = 1.6
+
+# Gesture guide shown as a full page (Tab to toggle), grouped the way a
+# settings page groups related options rather than as one flat run of nine.
+# Each row is (icon id, what it does, how you do it) -- the icon id looks up
+# both the sketch in assets/tutorial-gestures/ (see
+# UIOverlay._GESTURE_ICON_FILES) and the per-gesture enabled/disabled toggle
+# state (see main.py). The descriptions restate the behaviour configured
+# above, so keep them in step with e.g. DRAG_HOLD_S.
+GESTURE_GROUPS = (
+    ("Pointer", (
+        ("thumb", "Move cursor", "Thumb tip steers the pointer"),
+        ("point", "Click", "Point with your index finger"),
+        ("point_hold", "Drag", "Hold the point for half a second"),
+        ("two_finger", "Scroll", "Index and middle finger, move up or down"),
+    )),
+    ("Windows", (
+        ("flat_down", "Minimize", "Open palm, swipe down"),
+        ("flat_up", "Restore", "Open palm, swipe up"),
+        ("flat_left", "Switch window", "Open palm, swipe left"),
+    )),
+    ("Shortcuts", (
+        ("shaka", "New chat", "Thumb and pinky out"),
+        ("cross", "Exit", "Cross both hands into an X"),
+    )),
+    ("Session", (
+        ("both_flat", "Hold", "Both palms up to pause all"),
+    )),
+)
+
+# Flat (icon id, label) view of GESTURE_GROUPS in display order. The gesture
+# gating and the per-gesture toggle state iterate over this, so the grouping
+# above stays purely a presentation concern.
+GESTURE_TUTORIAL = tuple(
+    (icon, label) for _, rows in GESTURE_GROUPS for icon, label, _ in rows
 )
 
 # Feedback timings (seconds).

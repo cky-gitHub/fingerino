@@ -27,7 +27,12 @@ classifiers = [
     "Topic :: Scientific/Engineering :: Image Recognition",
 ]
 dependencies = [
-    "mediapipe>=0.10.9",
+    # Pinned below 1.0: MediaPipe 1.x loads its native code via ctypes.CDLL,
+    # which Windows Smart App Control blocks outright (unsigned, no
+    # reputation) on machines that have it enabled. The 0.10.x line loads
+    # the same native code the normal way Python imports work, which SAC
+    # doesn't intercept.
+    "mediapipe>=0.10.9,<1.0",
     "opencv-python>=4.9",
     "pynput>=1.7.6",
     "numpy>=1.26",
