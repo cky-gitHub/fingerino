@@ -4,7 +4,10 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "fingerino"
-version = "0.1.0"
+# Single source of truth is fingerino/__init__.py, which packaging/build.py
+# and packaging/fingerino.spec already read to name the installers. Declared
+# dynamic here so pip metadata cannot drift from the shipped filename.
+dynamic = ["version"]
 description = "Control your computer with webcam hand gestures — move, click, scroll and window shortcuts, no extra hardware."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -54,3 +57,6 @@ fingerino = "fingerino.main:main"
 
 [tool.setuptools]
 packages = ["fingerino"]
+
+[tool.setuptools.dynamic]
+version = { attr = "fingerino.__version__" }

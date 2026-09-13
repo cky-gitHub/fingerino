@@ -26,7 +26,6 @@ import platform
 import shutil
 import subprocess
 import sys
-import urllib.request
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 PACKAGING = os.path.join(ROOT, "packaging")
@@ -59,18 +58,25 @@ def run(cmd: list[str], **kw) -> None:
 # ---------------------------------------------------------------------------
 
 def ensure_model() -> str:
-    """Download the hand-landmark model into the repo root if it isn't there.
+    """Put the hand-landmark model in the repo root, verified against its pin.
 
     It is gitignored (7 MB) but must exist at build time — the spec copies it
     into the bundle so a packaged app never has to download anything.
+
+    This goes through the same checksum-verified fetch the app uses at
+    runtime, and that matters more here than it does there: whatever lands at
+    this path is baked into every installer we ship, so an unverified blob at
+    build time is an unverified blob on every machine that installs it.
     """
     from fingerino import config
-    from fingerino.hand_tracker import _MODEL_URL
+    from fingerino.hand_tracker import _ensure_model
 
     path = os.path.join(ROOT, config.MODEL_FILENAME)
-    if os.path.exists(path):
-        log(f"model present ({os.path.getsize(path) / 1e6:.1f} MB)")
-        return path
+    existed = os.path.exists(path)
+    _ensure_model(path, refetch=True)
+    log(f"model {'present' if existed else 'downloaded'}, checksum verified "
+        f"({os.path.getsize(path) / 1e6:.1f} MB)")
+    return path
     log(f"downloading model -> {path}")
     tmp = path + ".part"
     urllib.request.urlretrieve(_MODEL_URL, tmp)
