@@ -38,7 +38,7 @@ IS_WIN = sys.platform.startswith("win")
 IS_MAC = sys.platform == "darwin"
 
 sys.path.insert(0, ROOT)
-from fingerino import __version__ as VERSION  # noqa: E402
+from fingerino import __version__ as VERSION
 
 # macOS .iconset wants each size plus its @2x twin, which is the next size up.
 ICNS_SIZES = (16, 32, 128, 256, 512)
@@ -76,11 +76,6 @@ def ensure_model() -> str:
     _ensure_model(path, refetch=True)
     log(f"model {'present' if existed else 'downloaded'}, checksum verified "
         f"({os.path.getsize(path) / 1e6:.1f} MB)")
-    return path
-    log(f"downloading model -> {path}")
-    tmp = path + ".part"
-    urllib.request.urlretrieve(_MODEL_URL, tmp)
-    os.replace(tmp, path)
     return path
 
 

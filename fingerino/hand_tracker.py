@@ -142,7 +142,8 @@ def _download(url: str, dest: str) -> str:
     """
     digest = hashlib.sha256()
     done = 0
-    with urllib.request.urlopen(url, timeout=_DOWNLOAD_TIMEOUT_S) as response:
+    # S310: url is _MODEL_URL, a pinned https constant — never caller input.
+    with urllib.request.urlopen(url, timeout=_DOWNLOAD_TIMEOUT_S) as response:  # noqa: S310
         total = int(response.headers.get("Content-Length") or 0)
         with open(dest, "wb") as fh:
             while True:
@@ -240,7 +241,7 @@ class HandTracker:
         )
         self._landmarker = vision.HandLandmarker.create_from_options(options)
 
-    def _on_result(self, result, output_image, timestamp_ms: int) -> None:  # noqa: ANN001
+    def _on_result(self, result, output_image, timestamp_ms: int) -> None:
         """LIVE_STREAM callback (runs on a MediaPipe worker thread)."""
         if result.hand_landmarks:
             hands = [
@@ -268,7 +269,7 @@ class HandTracker:
     def close(self) -> None:
         self._landmarker.close()
 
-    def __enter__(self) -> "HandTracker":
+    def __enter__(self) -> HandTracker:
         return self
 
     def __exit__(self, *exc) -> None:

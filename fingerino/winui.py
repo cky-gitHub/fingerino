@@ -368,7 +368,7 @@ if _IS_WIN:
                     ("r2", ctypes.c_ushort), ("r3", ctypes.c_ushort),
                     ("p", ctypes.c_void_p), ("p2", ctypes.c_void_p)]
 
-    def _guid(d1, d2, d3, tail) -> "_GUID":
+    def _guid(d1, d2, d3, tail) -> _GUID:
         return _GUID(d1, d2, d3, (ctypes.c_ubyte * 8)(*tail))
 
     # IID_IPropertyStore
@@ -383,7 +383,8 @@ if _IS_WIN:
     _VT_LPWSTR = 31
 
 
-def set_taskbar_icon(hwnd, ico_path: str, app_id: str, display_name: str) -> bool:
+def set_taskbar_icon(hwnd, ico_path: str | None, app_id: str,
+                     display_name: str) -> bool:
     """Point the taskbar button at our own icon.
 
     Windows 11 resolves a taskbar button's icon from the window's shell
@@ -437,7 +438,7 @@ def set_taskbar_icon(hwnd, ico_path: str, app_id: str, display_name: str) -> boo
         return False
 
 
-def apply_icon(hwnd, ico_path: str) -> None:
+def apply_icon(hwnd, ico_path: str | None) -> None:
     """Set the title-bar and taskbar icons from an .ico file."""
     u = _u()
     if not (u and ico_path and _owned(hwnd)):

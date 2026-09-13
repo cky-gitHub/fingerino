@@ -45,6 +45,9 @@ dependencies = [
 # Everything packaging/build.py needs on top of the runtime deps.
 [project.optional-dependencies]
 build = ["pyinstaller>=6.0"]
+# Lint, type-check and test. Not needed to run or build Fingerino; the pinned
+# set the release workflow installs is requirements-build.txt.
+dev = ["ruff>=0.6", "mypy>=1.11", "pytest>=8.0"]
 
 [project.urls]
 Homepage = "https://github.com/cky-gitHub/fingerino"
@@ -60,3 +63,53 @@ packages = ["fingerino"]
 
 [tool.setuptools.dynamic]
 version = { attr = "fingerino.__version__" }
+
+[tool.ruff]
+# 100 rather than 88: the longest line in the codebase is 95, so this lints
+# what is written instead of forcing a reflow of code that reads fine.
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B", "C4", "SIM", "RUF", "S", "A", "PIE", "RET"]
+ignore = [
+    # This app talks to three operating systems through ctypes, AppleScript and
+    # OpenCV, and a good deal of that is genuinely optional: a missing icon, a
+    # HighGUI build without WND_PROP_TOPMOST, a font that will not load. Every
+    # such site here carries a comment saying why swallowing is the intent, and
+    # turning them into logging would put noise in front of users to no end.
+    "S110",    # try-except-pass
+    "S112",    # try-except-continue
+    "SIM105",  # "use contextlib.suppress" — the explicit form documents better
+
+    # Packaging shells out to codesign, hdiutil, iconutil, xcrun and ISCC, and
+    # macui to osascript. All are fixed argument lists with no shell and no
+    # user input; resolving them by absolute path would break on every machine
+    # whose toolchain lives somewhere else.
+    "S603",    # subprocess-without-shell-equals-true
+    "S607",    # start-process-with-partial-path
+
+    # "ProgramFiles(x86)" and "ProgramFiles" are the canonical Windows
+    # spellings, which is what _find_iscc() is reading.
+    "SIM112",
+
+    "RUF005",  # `tuple(...) + (255,)` reads better here than unpacking
+]
+
+[tool.ruff.lint.per-file-ignores]
+# build.py must extend sys.path before it can import the package it builds.
+"packaging/build.py" = ["E402"]
+# assert is how a test asserts; importorskip has to run before the import it
+# guards, and reaching for a private helper is the point of a unit test.
+"tests/*" = ["S101", "E402", "SLF001"]
+
+[tool.mypy]
+python_version = "3.10"
+files = ["fingerino"]
+# cv2, mediapipe and pynput ship no type stubs; this checks our code, not theirs.
+ignore_missing_imports = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

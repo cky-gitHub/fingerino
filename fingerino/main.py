@@ -29,16 +29,12 @@ import os
 import platform
 import sys
 import time
+from typing import Any
 
 import cv2
 import numpy as np
 
-from . import __version__
-from . import branding
-from . import config
-from . import macui
-from . import system_actions
-from . import winui
+from . import __version__, branding, config, macui, system_actions, winui
 from .cursor_controller import CursorController
 from .gesture_detector import GestureEngine
 from .hand_tracker import HandTracker, cache_dir
@@ -291,7 +287,7 @@ def main() -> int:
     # expanded composite (always exp_w x exp_h) -- so the two sets of
     # hit-rects below, precomputed once in those two fixed coordinate
     # spaces, never need to be recomputed per frame.
-    ui = {
+    ui: dict[str, Any] = {
         "menu_open": False,
         "tab_rect": overlay.collapsed_tab_rect(config.CAMERA_WIDTH, config.CAMERA_HEIGHT),
         "close_rect": (close_lx1 + panel_x, close_ly1 + panel_y,
@@ -339,7 +335,8 @@ def main() -> int:
         if _hit(ui["close_rect"], x, y):
             ui["menu_open"] = False
             return
-        for (icon, _), rect in zip(config.GESTURE_TUTORIAL, ui["row_rects"]):
+        for (icon, _), rect in zip(config.GESTURE_TUTORIAL, ui["row_rects"],
+                                   strict=True):
             if _hit(rect, x, y):
                 ui["gesture_enabled"][icon] = not ui["gesture_enabled"][icon]
                 return

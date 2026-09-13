@@ -382,7 +382,7 @@ class GestureEngine:
         if self._hold_anchor is None or len(self._hold_anchor) != len(centers):
             return True
         return any(math.hypot(c[0] - a[0], c[1] - a[1]) > config.HOLD_MAX_DRIFT
-                   for c, a in zip(centers, self._hold_anchor))
+                   for c, a in zip(centers, self._hold_anchor, strict=True))
 
     def _scroll(self, lms: Landmarks) -> int:
         y = scroll_point(lms)[1]
