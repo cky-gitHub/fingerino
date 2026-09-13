@@ -3,6 +3,11 @@
 Everything here degrades to a no-op on other platforms, so callers don't need
 to guard. OpenCV gives no API for any of this, so it's done through user32.
 
+Ownership invariant: every function below that changes a window first checks
+that the handle belongs to *this* process (see ``_owned``). Nothing but
+Fingerino's own HUD can be restyled, resized, re-iconed or re-ordered, no
+matter what handle a caller passes in.
+
 Note on ctypes: every function used is declared with explicit ``argtypes`` /
 ``restype``. Without them ctypes guesses 32-bit ints, which mangles HWND
 values and pseudo-handles like ``HWND_TOPMOST`` (-1) on 64-bit Windows —
@@ -11,6 +16,7 @@ values and pseudo-handles like ``HWND_TOPMOST`` (-1) on 64-bit Windows —
 
 from __future__ import annotations
 
+import os
 import sys
 
 _IS_WIN = sys.platform.startswith("win")
@@ -19,6 +25,9 @@ if _IS_WIN:
     import ctypes
     from ctypes import wintypes
 
+    _ENUMWINDOWSPROC = ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND,
+                                          wintypes.LPARAM)
+
 _GWL_STYLE = -16
 _WS_MAXIMIZEBOX = 0x00010000
 _WS_THICKFRAME = 0x00040000
@@ -26,6 +35,7 @@ _WS_CAPTION = 0x00C00000
 
 _SWP_NOSIZE = 0x0001
 _SWP_NOMOVE = 0x0002
+_SWP_NOZORDER = 0x0004
 _SWP_NOACTIVATE = 0x0010
 _SWP_FRAMECHANGED = 0x0020
 
@@ -48,8 +58,17 @@ def _u():
         return _user32
 
     u = ctypes.WinDLL("user32", use_last_error=True)
-    u.FindWindowW.restype = wintypes.HWND
-    u.FindWindowW.argtypes = [wintypes.LPCWSTR, wintypes.LPCWSTR]
+    # FindWindowW is deliberately not bound: matching on title alone is what
+    # let this module grab a stranger's window. See find_own_window().
+    u.EnumWindows.restype = wintypes.BOOL
+    u.EnumWindows.argtypes = [_ENUMWINDOWSPROC, wintypes.LPARAM]
+    u.GetClassNameW.restype = ctypes.c_int
+    u.GetClassNameW.argtypes = [wintypes.HWND, wintypes.LPWSTR, ctypes.c_int]
+    u.GetWindowTextW.restype = ctypes.c_int
+    u.GetWindowTextW.argtypes = [wintypes.HWND, wintypes.LPWSTR, ctypes.c_int]
+    u.GetWindowThreadProcessId.restype = wintypes.DWORD
+    u.GetWindowThreadProcessId.argtypes = [wintypes.HWND,
+                                           ctypes.POINTER(wintypes.DWORD)]
     u.SetWindowPos.restype = wintypes.BOOL
     u.SetWindowPos.argtypes = [wintypes.HWND, wintypes.HWND, ctypes.c_int,
                                ctypes.c_int, ctypes.c_int, ctypes.c_int,
@@ -93,12 +112,67 @@ def alert(title: str, text: str) -> None:
         pass
 
 
-def find_window(title: str):
-    """HWND for a top-level window by exact title, or None."""
+_HIGHGUI_CLASS = "Main HighGUI class"
+
+
+def _owned(hwnd) -> bool:
+    """True only for a live top-level window belonging to *this* process.
+
+    Every function below that changes a window is gated on this, so a handle
+    that isn't ours can never be restyled, resized, re-iconed or re-ordered,
+    whatever the caller passes in. GetWindowThreadProcessId returns 0 for a
+    handle that is dead or was never valid, so this also rejects an HWND that
+    Windows has since recycled to somebody else's window -- which is what
+    would otherwise let the topmost reassert loop latch onto a stranger.
+    """
+    u = _u()
+    if not u or not hwnd:
+        return False
+    pid = wintypes.DWORD()
+    if not u.GetWindowThreadProcessId(hwnd, ctypes.byref(pid)):
+        return False
+    return pid.value == os.getpid()
+
+
+def find_own_window(title: str):
+    """HWND of *our* HighGUI window with this exact title, or None.
+
+    Deliberately not ``FindWindowW(NULL, title)``. That matches on the title
+    alone -- case-insensitively, across every process, including windows that
+    are not even visible -- so an Explorer window sitting on a folder called
+    "fingerino" satisfies it, and the caller then goes on to strip that
+    window's title bar, lock its size, replace its icon and pin it topmost.
+
+    Three things are checked instead, and the process check is the one that
+    carries the guarantee: a window owned by anything but this process can
+    never be returned, whatever it happens to be called. The class check
+    keeps us off our own message boxes, and the title comparison is a plain
+    Python ``==`` -- exact and case-sensitive, unlike the Win32 one.
+
+    If a future OpenCV renames its window class this finds nothing and the
+    HUD simply goes unstyled and unpinned. That is the correct way to fail.
+    """
     u = _u()
     if not u:
         return None
-    return u.FindWindowW(None, title) or None
+    hit = []
+
+    def _visit(hwnd, _lparam):
+        if not _owned(hwnd):
+            return True
+        cls = ctypes.create_unicode_buffer(256)
+        u.GetClassNameW(hwnd, cls, 256)
+        if cls.value != _HIGHGUI_CLASS:
+            return True
+        text = ctypes.create_unicode_buffer(512)
+        u.GetWindowTextW(hwnd, text, 512)
+        if text.value != title:
+            return True
+        hit.append(hwnd)
+        return False  # found it -- stop enumerating
+
+    u.EnumWindows(_ENUMWINDOWSPROC(_visit), 0)
+    return hit[0] if hit else None
 
 
 def set_app_id(app_id: str) -> None:
@@ -119,13 +193,16 @@ def set_app_id(app_id: str) -> None:
 def lock_size(hwnd) -> None:
     """Drop the maximize box and resize grip; keep minimize and close."""
     u = _u()
-    if not (u and hwnd):
+    if not (u and _owned(hwnd)):
         return
     style = u.GetWindowLongW(hwnd, _GWL_STYLE)
     u.SetWindowLongW(hwnd, _GWL_STYLE,
                      style & ~(_WS_MAXIMIZEBOX | _WS_THICKFRAME))
+    # NOZORDER matters: hWndInsertAfter=NULL means HWND_TOP, so without it a
+    # pure style change would also shove every other window down one place.
     u.SetWindowPos(hwnd, None, 0, 0, 0, 0,
-                   _SWP_NOMOVE | _SWP_NOSIZE | _SWP_NOACTIVATE | _SWP_FRAMECHANGED)
+                   _SWP_NOMOVE | _SWP_NOSIZE | _SWP_NOZORDER | _SWP_NOACTIVATE
+                   | _SWP_FRAMECHANGED)
 
 
 def make_borderless(hwnd) -> None:
@@ -143,12 +220,15 @@ def make_borderless(hwnd) -> None:
     client rect are the same thing throughout the session.
     """
     u = _u()
-    if not (u and hwnd):
+    if not (u and _owned(hwnd)):
         return
     style = u.GetWindowLongW(hwnd, _GWL_STYLE)
     u.SetWindowLongW(hwnd, _GWL_STYLE, style & ~_WS_CAPTION)
+    # NOZORDER matters: hWndInsertAfter=NULL means HWND_TOP, so without it a
+    # pure style change would also shove every other window down one place.
     u.SetWindowPos(hwnd, None, 0, 0, 0, 0,
-                   _SWP_NOMOVE | _SWP_NOSIZE | _SWP_NOACTIVATE | _SWP_FRAMECHANGED)
+                   _SWP_NOMOVE | _SWP_NOSIZE | _SWP_NOZORDER | _SWP_NOACTIVATE
+                   | _SWP_FRAMECHANGED)
 
 
 def resize_client(hwnd, w: int, h: int) -> None:
@@ -157,11 +237,16 @@ def resize_client(hwnd, w: int, h: int) -> None:
     client rect here specifically because make_borderless() has already
     removed all non-client chrome -- no AdjustWindowRectEx dance needed,
     unlike a normal bordered window.
+
+    NOZORDER for the same reason as lock_size(): this runs on every gesture
+    guide open/close, and resizing our own window is no reason to reorder
+    anybody else's.
     """
     u = _u()
-    if not (u and hwnd):
+    if not (u and _owned(hwnd)):
         return
-    u.SetWindowPos(hwnd, None, 0, 0, w, h, _SWP_NOMOVE | _SWP_NOACTIVATE)
+    u.SetWindowPos(hwnd, None, 0, 0, w, h,
+                   _SWP_NOMOVE | _SWP_NOZORDER | _SWP_NOACTIVATE)
 
 
 def raise_above_all(hwnd) -> None:
@@ -175,7 +260,7 @@ def raise_above_all(hwnd) -> None:
     focus from whatever the user is actually typing into.
     """
     u = _u()
-    if not (u and hwnd):
+    if not (u and _owned(hwnd)):
         return
     if u.IsIconic(hwnd):
         return  # leave a minimized window alone
@@ -193,7 +278,7 @@ def unpin(hwnd) -> None:
     camera teardown, which are not.
     """
     u = _u()
-    if not (u and hwnd):
+    if not (u and _owned(hwnd)):
         return
     HWND_NOTOPMOST = wintypes.HWND(-2)
     u.SetWindowPos(hwnd, HWND_NOTOPMOST, 0, 0, 0, 0,
@@ -307,7 +392,7 @@ def set_taskbar_icon(hwnd, ico_path: str, app_id: str, display_name: str) -> boo
     ``RelaunchIconResource`` is the documented way to override it for a
     process that has no registered shortcut.
     """
-    if not (_IS_WIN and hwnd and ico_path):
+    if not (_IS_WIN and ico_path and _owned(hwnd)):
         return False
     try:
         ole32 = ctypes.WinDLL("ole32")
@@ -355,7 +440,7 @@ def set_taskbar_icon(hwnd, ico_path: str, app_id: str, display_name: str) -> boo
 def apply_icon(hwnd, ico_path: str) -> None:
     """Set the title-bar and taskbar icons from an .ico file."""
     u = _u()
-    if not (u and hwnd and ico_path):
+    if not (u and ico_path and _owned(hwnd)):
         return
     try:
         small = u.LoadImageW(None, ico_path, _IMAGE_ICON, 16, 16, _LR_LOADFROMFILE)

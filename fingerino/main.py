@@ -125,14 +125,17 @@ def _window_size(screen_w: int, screen_h: int) -> tuple[int, int]:
     return win_w, win_h
 
 
-def _finalize_window(name: str, client_w: int, client_h: int) -> tuple:
+def _finalize_window(name: str, client_w: int, client_h: int):
     """Apply icon, fixed size and always-on-top; return the HWND (or None).
 
-    ``cv2.namedWindow`` only registers the window; the real OS window isn't
-    created until the first ``imshow`` call, so this must run after that —
-    calling it earlier finds no window and silently no-ops.
+    Win32 HighGUI creates the real OS window inside ``cv2.namedWindow`` — not
+    on the first ``imshow``, as this used to claim — and the HWND is unchanged
+    once frames start arriving. So this runs during setup rather than from the
+    frame loop, and the HUD never flashes up bordered and unpinned while the
+    camera warms up. A backend that really does defer creation returns None
+    here and gets picked up by the retry in the loop instead.
     """
-    hwnd = winui.find_window(name)
+    hwnd = winui.find_own_window(name)
     if not hwnd:
         return None
     ico = branding.icon_path(cache_dir())
@@ -276,6 +279,7 @@ def main() -> int:
     cv2.namedWindow(config.WINDOW_NAME, cv2.WINDOW_NORMAL)
     cv2.resizeWindow(config.WINDOW_NAME, win_w, win_h)
     cv2.moveWindow(config.WINDOW_NAME, 0, 0)
+    hwnd = _finalize_window(config.WINDOW_NAME, win_w, win_h)
     if needs_access:
         # A toast lasts a second; this has to stay visible, because until it
         # is fixed the app tracks perfectly and controls nothing.
@@ -342,11 +346,10 @@ def main() -> int:
 
     cv2.setMouseCallback(config.WINDOW_NAME, _on_mouse)
 
-    hwnd = None
     pinned = False
     # Covers an abrupt close (console X button, logoff, shutdown) that skips
-    # straight past the try/finally below -- reads the current `hwnd` via
-    # closure, so it stays correct once _finalize_window() sets it below.
+    # straight past the try/finally below -- reads `hwnd` via closure, so it
+    # still works if the fallback in the loop is what ends up setting it.
     winui.install_console_handler(lambda: winui.unpin(hwnd))
     prev_menu_open = False
     last_access_t = 0.0
@@ -513,6 +516,8 @@ def main() -> int:
                     overlay.toast("Permission granted — restart Fingerino")
 
             if hwnd is None:
+                # Only reached on a HighGUI backend that defers window
+                # creation to the first imshow(); the Win32 one does not.
                 hwnd = _finalize_window(config.WINDOW_NAME, win_w, win_h)
                 last_topmost_t = now
             elif (config.WINDOW_ALWAYS_ON_TOP
@@ -543,6 +548,10 @@ def main() -> int:
         # First thing on every exit path, including the exit gesture and any
         # crash: never leave the user's mouse button held down.
         cursor.release()
+        # Before destroyAllWindows(), while the handle is still live. If it
+        # isn't, _owned() rejects it and this no-ops rather than poking at
+        # whatever window Windows may have recycled the handle to.
+        winui.unpin(hwnd)
         cap.release()
         cv2.destroyAllWindows()
         tracker.close()
