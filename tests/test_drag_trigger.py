@@ -38,7 +38,7 @@ def test_short_point_clicks_and_never_presses():
     trigger = armed()
     trigger.update(True, 0.10)
     trigger.update(True, 0.20)                      # well under DRAG_HOLD_S
-    assert trigger.update(False, 0.30) == (False, False, False)   # inside grace
+    assert not any(trigger.update(False, 0.30)[:3])                # inside grace
     edges = trigger.update(False, 0.30 + config.CLICK_RELEASE_GRACE_S + 0.01)
     assert edges.click and not edges.press and not edges.release
     assert not trigger.down

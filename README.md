@@ -1,7 +1,7 @@
 # 🖐️ Fingerino
 
 **Control your computer with webcam hand gestures.** Move the cursor with your
-thumb, click by pointing, drag by holding the point, scroll with two fingers,
+hand, click by pointing, drag by holding the point, scroll with two fingers,
 and run window shortcuts with a wave — no extra hardware, just your laptop's
 built-in camera.
 
@@ -68,7 +68,7 @@ antivirus may object to an app that watches a camera and moves the mouse.
 
 | Gesture | Action |
 | --- | --- |
-| **Thumb** tip | Move the cursor |
+| **Move your hand** | Move the cursor |
 | **Point** — index out, middle in | Left click (flick the index out and back) |
 | **Hold the point** ~0.5s | Drag — the button goes down and stays down |
 | **Two fingers** — index + middle out | Scroll (move the hand up / down) |
@@ -227,7 +227,25 @@ Everything worth adjusting is in [`fingerino/config.py`](fingerino/config.py)
 - **Cursor feel** — `ONE_EURO_MIN_CUTOFF` (lower = steadier when still),
   `ONE_EURO_BETA` (higher = snappier when moving fast).
 - **Reach** — `CONTROL_ZONE_*_MARGIN` shrink/grow the mapped rectangle.
-- **Cursor source** — `CURSOR_LANDMARK` (`4` = thumb tip, `8` = index tip).
+- **Cursor source** — `CURSOR_SOURCE`: `index_mcp` (default, the index
+  knuckle), `palm` (steadiest), or `thumb_tip` (the original). Clicking means
+  extending a finger, which reshapes the hand and drags a fingertip off the
+  thing you were aiming at — points nearer the wrist barely move, which is
+  why the default is not a fingertip.
+- **Click anchoring** — `CLICK_ANCHOR` delivers a click where the cursor was
+  just *before* you started pointing, rather than where the hand drifted to
+  by the time the click registered. `CLICK_ANCHOR_LOOKBACK_S` tunes how far
+  back it reaches; `FREEZE_WHILE_AIMING` stops the cursor while you commit.
+
+  Measure a change rather than trusting how it feels — every change feels
+  better for the first two minutes:
+
+  ```
+  python -m fingerino.fitts --label "index_mcp + anchor"
+  ```
+
+  It shows targets, times your clicks and reports throughput and error rate.
+  Run it with an ordinary mouse first for a baseline.
 - **Clicks + drag** — `DRAG_HOLD_S` (how long a point must be held before it
   becomes a drag instead of a click), `CLICK_COOLDOWN_S`,
   `INDEX_EXTEND_MARGIN`, `CLICK_RELEASE_GRACE_S` / `DRAG_RELEASE_GRACE_S` (how

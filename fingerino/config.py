@@ -45,8 +45,47 @@ ONE_EURO_D_CUTOFF = 1.0
 # ---------------------------------------------------------------------------
 # Cursor source
 # ---------------------------------------------------------------------------
-# Which hand landmark drives the cursor. 4 = thumb tip, 8 = index fingertip.
+# What the cursor rides on. The cursor wants a *carrier* signal — where your
+# arm is — uncontaminated by the *gesture* signal, which is what your fingers
+# are doing. A fingertip is the worst of both: pointing to click reshapes the
+# hand and drags the tip with it, so the aim moves while you are committing to
+# it. Points nearer the wrist barely move when fingers articulate.
+#
+#   "index_mcp"  the index knuckle. Barely moves when the finger extends, but
+#                still sits at the pointing end of the hand, so aiming feels
+#                like aiming. The default.
+#   "palm"       centroid of wrist + the four knuckles. The steadiest option;
+#                needs whole-hand movement rather than a flick of the wrist.
+#   "thumb_tip"  the original. Most range per unit of arm movement, and by far
+#                the most click drift. Kept so it can be measured against.
+#
+# Compare them with `python -m fingerino.fitts`, which measures rather than
+# guesses — everything feels better immediately after you change it.
+CURSOR_SOURCE = "index_mcp"
+# Used only when CURSOR_SOURCE is "landmark". 4 = thumb tip, 8 = index tip.
 CURSOR_LANDMARK = 4
+
+# ---------------------------------------------------------------------------
+# Click anchoring
+# ---------------------------------------------------------------------------
+# Where a click lands. Not where the cursor is when the click fires — by then
+# the hand has extended a finger and relaxed it again, and at the ~2.5x gain
+# the control zone applies, a centimetre of that drift is tens of screen
+# pixels, which is the size of the button you were aiming at.
+#
+# Instead the moment the pointing posture *begins* is treated as the commit
+# point: the cursor freezes there, and the click is delivered at the position
+# it held slightly before that — because the finger has to travel past
+# INDEX_EXTEND_MARGIN before the posture registers, and the drift starts on
+# the first millimetre of that travel.
+CLICK_ANCHOR = True
+# How far back from the moment the posture registered to take the position.
+CLICK_ANCHOR_LOOKBACK_S = 0.12
+# How much cursor history to keep for that lookup, in seconds.
+CURSOR_HISTORY_S = 0.6
+# Freeze the cursor while a point is pending, so what you committed to is also
+# what you can see. Tracking resumes the instant it latches into a drag.
+FREEZE_WHILE_AIMING = True
 
 # ---------------------------------------------------------------------------
 # Finger posture
@@ -224,7 +263,7 @@ PANEL_ICON_ALPHA_GAIN = 1.6
 # above, so keep them in step with e.g. DRAG_HOLD_S.
 GESTURE_GROUPS = (
     ("Pointer", (
-        ("thumb", "Move cursor", "Thumb tip steers the pointer"),
+        ("thumb", "Move cursor", "Move your hand to steer the pointer"),
         ("point", "Click", "Point with your index finger"),
         ("point_hold", "Drag", "Hold the point for half a second"),
         ("two_finger", "Scroll", "Index and middle finger, move up or down"),

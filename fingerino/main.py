@@ -1,8 +1,9 @@
 """Fingerino — webcam hand-tracking mouse.
 
 Gestures (one hand unless noted):
-    Move      thumb tip drives the cursor
-    Click     point (index out, middle in)
+    Move      hand position drives the cursor (see config.CURSOR_SOURCE)
+    Click     point (index out, middle in) — lands where you aimed, not
+              where the finger dragged the hand to on its way out
     Drag      hold the point ~0.5s — the button then stays down until the
               finger relaxes
     Scroll    two fingers out (index + middle), move the hand up / down
@@ -37,7 +38,7 @@ import numpy as np
 
 from . import __version__, branding, config, macui, system_actions, winui
 from .cursor_controller import CursorController
-from .gesture_detector import GestureEngine
+from .gesture_detector import GestureEngine, cursor_point
 from .hand_tracker import HandTracker, cache_dir
 from .ui_overlay import UIOverlay, panel_scale_for
 
@@ -193,6 +194,35 @@ def _fatal(message: str) -> None:
     print(f"[fingerino] {message}", file=sys.stderr)
     winui.alert(config.WINDOW_NAME, message)
     macui.alert(config.WINDOW_NAME, message)
+
+
+def _screen_to_frame_px(cursor, sx: int, sy: int, w: int, h: int) -> tuple[int, int]:
+    """Invert the control-zone mapping: screen pixels back to frame pixels.
+
+    The HUD draws in camera-frame space while the anchored click position is
+    worked out in screen space, so showing the user where a click will really
+    land means coming back the other way.
+    """
+    zx = sx / max(cursor.screen_w - 1, 1)
+    zy = sy / max(cursor.screen_h - 1, 1)
+    nx = zx * (1.0 - 2 * config.CONTROL_ZONE_X_MARGIN) + config.CONTROL_ZONE_X_MARGIN
+    ny = zy * (1.0 - 2 * config.CONTROL_ZONE_Y_MARGIN) + config.CONTROL_ZONE_Y_MARGIN
+    return int(nx * w), int(ny * h)
+
+
+def _anchored_frame_px(cursor, anchor_t: float | None, w: int, h: int):
+    """Where a button with this anchor will actually land, in frame pixels.
+
+    None when anchoring is off, when there is no anchor, or when the position
+    is no longer in the cursor's history — in each of which cases the caller
+    falls back to the live position, which is what used to happen always.
+    """
+    if not config.CLICK_ANCHOR or anchor_t is None:
+        return None
+    pos = cursor.anchor_at(anchor_t - config.CLICK_ANCHOR_LOOKBACK_S)
+    if pos is None:
+        return None
+    return _screen_to_frame_px(cursor, pos[0], pos[1], w, h)
 
 
 def _zone_px(w: int, h: int) -> tuple[int, int, int, int]:
@@ -400,11 +430,25 @@ def _run() -> int:
             if tracking:
                 hands_px = [[(int(p[0] * w), int(p[1] * h)) for p in hand]
                             for hand in hands]
-                tip = hands[0][config.CURSOR_LANDMARK]  # thumb tip
+                tip = cursor_point(hands[0])
                 cursor_px = (int(tip[0] * w), int(tip[1] * h))
 
-                if out.mode == "move" and drive and _live("thumb"):
+                # While a point is pending the user is committing to a target,
+                # not still aiming at one -- so the cursor stops here. Without
+                # it, extending the finger reshapes the hand and drags the aim
+                # off the thing being aimed at. Tracking resumes the moment
+                # the point latches into a drag.
+                committing = config.FREEZE_WHILE_AIMING and out.aiming
+                if out.mode == "move" and drive and _live("thumb") and not committing:
                     cursor.update(tip[0], tip[1], now)
+
+                # Show the committed point rather than the hand's live
+                # position, so the reticle stops where the click will land
+                # instead of drifting off it while the finger extends.
+                if out.aiming:
+                    aimed = _anchored_frame_px(cursor, out.aim_anchor_t, w, h)
+                    if aimed is not None:
+                        cursor_px = aimed
                 elif out.mode == "scroll" and drive and _live("two_finger"):
                     cursor.scroll(out.scroll_steps)
 
@@ -433,11 +477,12 @@ def _run() -> int:
             # nothing tracked.
             if out.click and _live("point"):
                 if drive:
-                    cursor.click()
-                if cursor_px is not None:
-                    overlay.flash_click(cursor_px)
+                    cursor.click(out.anchor_t)
+                flash_px = _anchored_frame_px(cursor, out.anchor_t, w, h) or cursor_px
+                if flash_px is not None:
+                    overlay.flash_click(flash_px)
             if out.press and drive and _live("point_hold"):
-                cursor.press()
+                cursor.press(out.anchor_t)
             # Not gated by _live("point_hold"): release() is a safe no-op if
             # the button isn't held, but if Drag gets disabled -- or the
             # session paused -- mid-hold this still has to go through or the
