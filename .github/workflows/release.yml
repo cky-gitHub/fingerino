@@ -130,14 +130,11 @@ jobs:
           path: artifacts
           merge-multiple: true
 
-      - name: Create the GitHub Release
-        env:
-          GH_TOKEN: ${{ github.token }}
-          GH_REPO: ${{ github.repository }}
+      # The notes are composed to a file rather than piped straight in, because
+      # the checksum block below has to be appended after the artifacts exist.
+      - name: Compose the release notes
         run: |
-          gh release create "${GITHUB_REF_NAME}" \
-            --title "Fingerino ${GITHUB_REF_NAME}" \
-            --notes-file - <<'NOTES'
+          cat > notes.md <<'NOTES'
           ## Download
 
           | Your machine | File | What to do |
@@ -160,5 +157,30 @@ jobs:
           Fingerino needs **camera** access on both platforms, and on macOS also
           **Accessibility** (System Settings → Privacy & Security →
           Accessibility) before it can move the cursor. It'll prompt you.
+
+          Video is processed on your machine and never leaves it. These builds
+          contain the hand model already, so they make no network request at
+          all. See the README's Privacy section and SECURITY.md.
           NOTES
+
+          # Neither installer is signed, so the OS cannot vouch for these files.
+          # Publishing the digests gives anyone who cares a way to check the
+          # download they got is the one this workflow actually produced.
+          {
+            printf '\n### Verify your download\n\n'
+            printf 'Optional, but these are the SHA-256 digests this build produced:\n\n'
+            printf '```\n'
+            ( cd artifacts && sha256sum -- * )
+            printf '```\n\n'
+            printf 'Windows: `Get-FileHash <file>` — macOS: `shasum -a 256 <file>`\n'
+          } >> notes.md
+
+      - name: Create the GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          gh release create "${GITHUB_REF_NAME}" \
+            --title "Fingerino ${GITHUB_REF_NAME}" \
+            --notes-file notes.md
           gh release upload "${GITHUB_REF_NAME}" artifacts/*

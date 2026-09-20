@@ -29,6 +29,7 @@ import os
 import platform
 import sys
 import time
+import traceback
 from typing import Any
 
 import cv2
@@ -202,7 +203,7 @@ def _zone_px(w: int, h: int) -> tuple[int, int, int, int]:
     return x1, y1, x2, y2
 
 
-def main() -> int:
+def _run() -> int:
     parser = argparse.ArgumentParser(description="Webcam hand-tracking mouse.")
     parser.add_argument("--debug", action="store_true",
                         help="show the raw hand skeleton and FPS")
@@ -554,6 +555,57 @@ def main() -> int:
         tracker.close()
 
     return 0
+
+
+def _crash_report(exc: BaseException) -> int:
+    """Write a traceback beside the selftest report and say so on screen.
+
+    A packaged build has no console, so an unhandled exception otherwise makes
+    the window vanish leaving nothing on screen and nothing on disk: the user
+    has "it stopped working" and no way to tell anyone more than that. The
+    cleanup in _run's finally clause has already run by the time this is
+    reached, so the mouse button is released whatever happened.
+    """
+    lines = [
+        f"Fingerino {__version__} crashed",
+        f"python {sys.version.split()[0]} on {sys.platform} "
+        f"({platform.machine()})",
+        f"frozen: {bool(getattr(sys, 'frozen', False))}",
+        f"opencv: {cv2.__version__}",
+        "",
+    ]
+    report = "\n".join(lines) + "".join(traceback.format_exception(exc))
+    print(report, file=sys.stderr)
+
+    path = None
+    try:
+        path = os.path.join(cache_dir(), "crash.txt")
+        with open(path, "w", encoding="utf-8") as fh:
+            fh.write(report)
+    except OSError:
+        path = None          # a cache we cannot write to is not worth a second failure
+
+    message = (f"Fingerino stopped unexpectedly.\n\n"
+               f"{type(exc).__name__}: {exc}")
+    if path:
+        message += (f"\n\nThe details were saved to:\n{path}\n\n"
+                    "Attaching that file to a bug report is the fastest way "
+                    "to get this fixed.")
+    winui.alert(config.WINDOW_NAME, message)
+    macui.alert(config.WINDOW_NAME, message)
+    return 1
+
+
+def main() -> int:
+    """Entry point for all three launch paths; see _run for the real work."""
+    try:
+        return _run()
+    except SystemExit:
+        raise                # argparse --help and friends: not a crash
+    except KeyboardInterrupt:
+        return 130
+    except BaseException as exc:
+        return _crash_report(exc)
 
 
 if __name__ == "__main__":

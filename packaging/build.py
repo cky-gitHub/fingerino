@@ -38,6 +38,7 @@ IS_WIN = sys.platform.startswith("win")
 IS_MAC = sys.platform == "darwin"
 
 sys.path.insert(0, ROOT)
+sys.path.insert(0, PACKAGING)      # for notices.py, beside this file
 from fingerino import __version__ as VERSION
 
 # macOS .iconset wants each size plus its @2x twin, which is the next size up.
@@ -76,6 +77,24 @@ def ensure_model() -> str:
     _ensure_model(path, refetch=True)
     log(f"model {'present' if existed else 'downloaded'}, checksum verified "
         f"({os.path.getsize(path) / 1e6:.1f} MB)")
+    return path
+
+
+def write_notices() -> str:
+    """Generate THIRD-PARTY-NOTICES.md for the versions in this build.
+
+    Most of what the installers redistribute — MediaPipe, OpenCV, absl-py and
+    flatbuffers under Apache-2.0, pynput and the OpenCV FFmpeg DLL under the
+    LGPL, Inter under the OFL — requires its licence text to travel with it.
+    Generated rather than checked in so it can never describe a different set
+    of versions than the one actually shipped.
+    """
+    import notices
+
+    path = os.path.join(DIST, "THIRD-PARTY-NOTICES.md")
+    os.makedirs(DIST, exist_ok=True)
+    notices.write(path)
+    log(f"notices: {path} ({os.path.getsize(path) / 1000:.0f} KB)")
     return path
 
 
@@ -156,11 +175,15 @@ def _find_iscc() -> str | None:
     return None
 
 
-def package_windows() -> list[str]:
+def package_windows(notices: str) -> list[str]:
     app_dir = os.path.join(DIST, "Fingerino")
     if not os.path.isdir(app_dir):
         raise SystemExit(f"expected {app_dir} — PyInstaller did not produce it")
     out: list[str] = []
+
+    # Inno's [Files] globs this folder recursively and the portable zip is made
+    # from it, so putting the notices here covers both installers at once.
+    shutil.copyfile(notices, os.path.join(app_dir, "THIRD-PARTY-NOTICES.md"))
 
     base = f"Fingerino-{VERSION}-windows-x64"
     out.append(shutil.make_archive(os.path.join(RELEASE, base), "zip",
@@ -255,7 +278,7 @@ Still blocked after step 3? Open Terminal and run:
 """
 
 
-def package_macos() -> list[str]:
+def package_macos(notices: str) -> list[str]:
     app = os.path.join(DIST, "Fingerino.app")
     if not os.path.isdir(app):
         raise SystemExit(f"expected {app} — PyInstaller did not produce it")
@@ -274,6 +297,9 @@ def package_macos() -> list[str]:
     with open(os.path.join(stage, "Read Me First.txt"), "w",
               encoding="utf-8") as fh:
         fh.write(_DMG_READ_ME)
+    # In the disk image rather than inside the bundle: the .app is already
+    # signed by this point and adding a file would invalidate the signature.
+    shutil.copyfile(notices, os.path.join(stage, "THIRD-PARTY-NOTICES.md"))
 
     if os.path.exists(dmg):
         os.remove(dmg)
@@ -303,11 +329,12 @@ def main() -> int:
     ensure_model()
     build_icons()
     run_pyinstaller(args.console)
+    notices = write_notices()
 
     if IS_WIN:
-        made = package_windows()
+        made = package_windows(notices)
     elif IS_MAC:
-        made = package_macos()
+        made = package_macos(notices)
     else:
         log("Linux: the app folder is in dist/Fingerino (no installer target)")
         made = []
