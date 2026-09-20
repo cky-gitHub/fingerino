@@ -45,23 +45,31 @@ ONE_EURO_D_CUTOFF = 1.0
 # ---------------------------------------------------------------------------
 # Cursor source
 # ---------------------------------------------------------------------------
-# What the cursor rides on. The cursor wants a *carrier* signal — where your
-# arm is — uncontaminated by the *gesture* signal, which is what your fingers
-# are doing. A fingertip is the worst of both: pointing to click reshapes the
-# hand and drags the tip with it, so the aim moves while you are committing to
-# it. Points nearer the wrist barely move when fingers articulate.
+# What the cursor rides on.
 #
-#   "index_mcp"  the index knuckle. Barely moves when the finger extends, but
-#                still sits at the pointing end of the hand, so aiming feels
-#                like aiming. The default.
-#   "palm"       centroid of wrist + the four knuckles. The steadiest option;
-#                needs whole-hand movement rather than a flick of the wrist.
-#   "thumb_tip"  the original. Most range per unit of arm movement, and by far
-#                the most click drift. Kept so it can be measured against.
+# The thumb tip is the default, and the reason is the user rather than the
+# signal. You can see your thumb in the preview and you have fine motor
+# control and proprioception for a fingertip -- aiming it is a deliberate act.
+# Nobody has a mental model of where their index knuckle is in space, so a
+# cursor riding one is something that happens *to* you rather than something
+# you point. A steadier signal you cannot consciously aim is not a better
+# pointer.
 #
-# Compare them with `python -m fingerino.fitts`, which measures rather than
-# guesses — everything feels better immediately after you change it.
-CURSOR_SOURCE = "index_mcp"
+# The steadier options exist because a fingertip does move when the hand
+# reshapes to click. That drift is handled where it is actually caused, by the
+# click anchoring below, which works whichever source is chosen -- so this is
+# a question of feel, not of click accuracy.
+#
+#   "thumb_tip"  the default. Visible, aimable, most cursor range per unit of
+#                arm movement.
+#   "index_mcp"  the index knuckle. Barely moves when a finger extends, still
+#                at the pointing end of the hand. Steadier, harder to aim.
+#   "palm"       centroid of wrist + knuckles. Steadiest of the three; needs
+#                whole-hand movement rather than a flick of the wrist.
+#
+# Compare them with `python -m fingerino.fitts` rather than by feel --
+# everything feels better immediately after you change it.
+CURSOR_SOURCE = "thumb_tip"
 # Used only when CURSOR_SOURCE is "landmark". 4 = thumb tip, 8 = index tip.
 CURSOR_LANDMARK = 4
 
@@ -263,7 +271,7 @@ PANEL_ICON_ALPHA_GAIN = 1.6
 # above, so keep them in step with e.g. DRAG_HOLD_S.
 GESTURE_GROUPS = (
     ("Pointer", (
-        ("thumb", "Move cursor", "Move your hand to steer the pointer"),
+        ("thumb", "Move cursor", "Thumb tip steers the pointer"),
         ("point", "Click", "Point with your index finger"),
         ("point_hold", "Drag", "Hold the point for half a second"),
         ("two_finger", "Scroll", "Index and middle finger, move up or down"),

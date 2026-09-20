@@ -1,7 +1,7 @@
 # 🖐️ Fingerino
 
 **Control your computer with webcam hand gestures.** Move the cursor with your
-hand, click by pointing, drag by holding the point, scroll with two fingers,
+thumb, click by pointing, drag by holding the point, scroll with two fingers,
 and run window shortcuts with a wave — no extra hardware, just your laptop's
 built-in camera.
 
@@ -68,7 +68,7 @@ antivirus may object to an app that watches a camera and moves the mouse.
 
 | Gesture | Action |
 | --- | --- |
-| **Move your hand** | Move the cursor |
+| **Thumb** tip | Move the cursor |
 | **Point** — index out, middle in | Left click (flick the index out and back) |
 | **Hold the point** ~0.5s | Drag — the button goes down and stays down |
 | **Two fingers** — index + middle out | Scroll (move the hand up / down) |
@@ -227,11 +227,11 @@ Everything worth adjusting is in [`fingerino/config.py`](fingerino/config.py)
 - **Cursor feel** — `ONE_EURO_MIN_CUTOFF` (lower = steadier when still),
   `ONE_EURO_BETA` (higher = snappier when moving fast).
 - **Reach** — `CONTROL_ZONE_*_MARGIN` shrink/grow the mapped rectangle.
-- **Cursor source** — `CURSOR_SOURCE`: `index_mcp` (default, the index
-  knuckle), `palm` (steadiest), or `thumb_tip` (the original). Clicking means
-  extending a finger, which reshapes the hand and drags a fingertip off the
-  thing you were aiming at — points nearer the wrist barely move, which is
-  why the default is not a fingertip.
+- **Cursor source** — `CURSOR_SOURCE`: `thumb_tip` (default), `index_mcp`
+  (the index knuckle) or `palm`. The thumb is the default because you can
+  see it and aim it; the other two are steadier signals but are not points
+  you can consciously point. Click accuracy does not depend on this — that
+  is handled by anchoring, below.
 - **Click anchoring** — `CLICK_ANCHOR` delivers a click where the cursor was
   just *before* you started pointing, rather than where the hand drifted to
   by the time the click registered. `CLICK_ANCHOR_LOOKBACK_S` tunes how far

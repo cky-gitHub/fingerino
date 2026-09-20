@@ -1,7 +1,7 @@
 """Fingerino — webcam hand-tracking mouse.
 
 Gestures (one hand unless noted):
-    Move      hand position drives the cursor (see config.CURSOR_SOURCE)
+    Move      thumb tip drives the cursor (see config.CURSOR_SOURCE)
     Click     point (index out, middle in) — lands where you aimed, not
               where the finger dragged the hand to on its way out
     Drag      hold the point ~0.5s — the button then stays down until the
