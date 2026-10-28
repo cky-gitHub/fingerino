@@ -326,11 +326,16 @@ python packaging/build.py --console  # same, but with a console for tracebacks
 
 PyInstaller can't cross-compile, so each target has to be built on its own
 machine — that's what [`.github/workflows/release.yml`](.github/workflows/release.yml)
-is for. Push a tag and it builds all three and publishes a release:
+is for. Push a tag and it builds Windows and Apple Silicon and publishes a
+release:
 
 ```bash
 git tag v0.1.0 && git push origin v0.1.0
 ```
+
+The tag must match `__version__` in `fingerino/__init__.py` or the build stops.
+The full routine — bumping the version, stable download links, and undoing a
+release — is in [`docs/releasing.md`](docs/releasing.md).
 
 | File | What it does |
 | --- | --- |

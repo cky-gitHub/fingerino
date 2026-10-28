@@ -41,6 +41,24 @@ jobs:
         with:
           python-version: "3.12"
 
+      # The file names come from __version__, not the tag, so tagging v0.2.0
+      # without bumping it would publish a release full of 0.1.0 files. Read
+      # with a regex rather than an import: nothing is installed yet.
+      - name: Check the tag matches __version__
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: python
+        run: |
+          import os, re
+          tag = os.environ["GITHUB_REF_NAME"]
+          src = open("fingerino/__init__.py", encoding="utf-8").read()
+          version = re.search(r'^__version__ = "([^"]+)"', src, re.M).group(1)
+          if tag != f"v{version}":
+              print(f"::error::Tag {tag} does not match __version__ {version}. "
+                    f"Bump fingerino/__init__.py to {tag.lstrip('v')}, merge it, "
+                    f"and tag that commit -- see docs/releasing.md.")
+              raise SystemExit(1)
+          print(f"tag {tag} matches __version__ {version}")
+
       # Pinned, not resolved: requirements-build.txt is what makes a tag
       # reproducible. --no-deps for the project itself so nothing in
       # pyproject.toml's loose ranges can quietly override a pin.
@@ -184,3 +202,20 @@ jobs:
             --title "Fingerino ${GITHUB_REF_NAME}" \
             --notes-file notes.md
           gh release upload "${GITHUB_REF_NAME}" artifacts/*
+
+      # Version-less copies give a website a link that never goes stale:
+      #   https://github.com/<owner>/<repo>/releases/latest/download/Fingerino-windows-x64-Setup.exe
+      # Uploaded after the notes are written, so the checksums above list each
+      # build once. The copies are byte-identical, so the same digests apply.
+      - name: Attach stable-named copies
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          mkdir stable
+          for f in artifacts/*; do
+            name=$(basename "$f" | sed -E 's/^Fingerino-[^-]+-/Fingerino-/')
+            cp "$f" "stable/$name"
+          done
+          ls stable
+          gh release upload "${GITHUB_REF_NAME}" stable/*
