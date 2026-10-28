@@ -74,4 +74,4 @@ jobs:
 
 # macOS is deliberately not built here. Hosted macOS minutes bill at ten times
 # the Linux rate, and release.yml already runs a full build and selftest on
-# both Apple Silicon and Intel for every tag.
+# Apple Silicon for every tag.

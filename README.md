@@ -108,10 +108,10 @@ no Python, no terminal, nothing else to install.
 | --- | --- | --- |
 | Windows 10 / 11 | `Fingerino-*-windows-x64-Setup.exe` | Run it. Fingerino lands in your Start menu. |
 | Mac — Apple Silicon | `Fingerino-*-macos-arm64.dmg` | Open it, drag Fingerino to Applications. |
-| Mac — Intel | `Fingerino-*-macos-intel.dmg` | Open it, drag Fingerino to Applications. |
 
 Which Mac do you have? **Apple menu › About This Mac** — "Apple M-something" is
-Apple Silicon, "Intel" is Intel.
+Apple Silicon. Intel Macs are not supported: MediaPipe, the hand tracker
+Fingerino is built on, no longer releases versions for them.
 
 ### The first launch
 
