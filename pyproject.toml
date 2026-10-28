@@ -117,3 +117,6 @@ warn_unused_ignores = true
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+# Import fingerino from the checkout even when it is not installed, as in the
+# dependency-free CI job. Bare `pytest` does not add the cwd to sys.path.
+pythonpath = ["."]
