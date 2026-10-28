@@ -1,0 +1,57 @@
+name: Bug report
+description: Something doesn't work, crashes, or behaves differently than described.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting. The two files below answer most first questions
+        on their own, so please attach them if you can.
+
+        They live in `%LOCALAPPDATA%\fingerino` on Windows (paste that into the
+        Explorer address bar) or `~/Library/Caches/fingerino` on macOS. Neither
+        contains any camera images.
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: What you did, what you expected, and what happened instead.
+    validations:
+      required: true
+
+  - type: textarea
+    id: selftest
+    attributes:
+      label: selftest.txt
+      description: |
+        Run `Fingerino.exe --selftest` (or `fingerino --selftest`), then drag
+        the `selftest.txt` it writes into this box, or paste its contents.
+    validations:
+      required: true
+
+  - type: textarea
+    id: crash
+    attributes:
+      label: crash.txt
+      description: Only if Fingerino crashed. It writes this file when it does.
+
+  - type: dropdown
+    id: os
+    attributes:
+      label: Operating system
+      options:
+        - Windows 11
+        - Windows 10
+        - macOS (Apple Silicon)
+        - macOS (Intel)
+        - Linux
+    validations:
+      required: true
+
+  - type: input
+    id: setup
+    attributes:
+      label: Camera and screen setup
+      description: Anything unusual helps. More than one webcam, an external webcam, several monitors, display scaling above 100%.
+      placeholder: e.g. laptop webcam + USB webcam, two monitors, 150% scaling

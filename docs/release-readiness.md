@@ -3,9 +3,9 @@
 Working plan for getting Fingerino to the point where it can be handed to
 other people and behave the same way on their machines as it does here.
 
-Status as of 2026-09-16. Phases 0, 1 and 3 are done and sit on the branch
-`hardening/release-readiness` (three commits, **not yet pushed**). `main` is
-still at `81d8a7f`.
+Status as of 2026-10-28. Phases 0, 1, 3 and 4 are done and merged to `main`
+(PR #1, `b32ae58`). CI is green on a real runner for the first time. Next up is
+Phase 2, which needs a webcam session.
 
 ---
 
@@ -15,7 +15,8 @@ still at `81d8a7f`.
 | --- | --- | --- |
 | 0 — security fix | `95536fd` | `winui` matched windows by title across every process; any window called "fingerino" could be restyled and pinned. Now gated on owning PID. |
 | 3 — reproducible builds | `13937c9` | Model download had no checksum and no timeout; dependencies were unpinned floors; version lived in two places. |
-| 1 — CI | `1d50fd4` | No workflow ran on push — only on tag. Now lint + types + tests on every push, plus a 37-test starter suite. |
+| 1 — CI | `1d50fd4`, `76f9d7a`, `bf7901f` | No workflow ran on push — only on tag. Now lint + types + tests on every push. The first two runner fixes came later: mypy on Linux rejected `ctypes.WinDLL`, and bare `pytest` could not import the uninstalled package. |
+| 4 — trust | `93b24c9` + issue template | README privacy section, `SECURITY.md`, licence notices, local crash report, SHA-256 of release artifacts, bug-report form that asks for `selftest.txt` and `crash.txt`. |
 
 ### Verified facts worth not re-deriving
 
@@ -38,23 +39,23 @@ still at `81d8a7f`.
 ```
 python -m ruff check fingerino packaging tests
 python -m mypy
-python -m pytest -q          # 37 passed, 1 skipped
+python -m pytest -q          # 72 passed, 1 skipped
 python -m fingerino --selftest
 ```
 
+Always run `python -m pytest` locally. It puts the cwd on `sys.path`, so it
+passes even where CI's bare `pytest` would not — that is how the import bug
+above stayed hidden. `pythonpath = ["."]` in `pyproject.toml` now covers both.
+
 ---
 
-## Next: push and confirm CI
+## Loose ends found while getting CI green
 
-Nothing below should start until a real runner has proven `ci.yml`. It has
-only ever been validated locally and against a simulated dependency-free
-environment.
-
-```
-git push -u origin hardening/release-readiness
-```
-
-Then merge if green.
+- **The Release workflow has never succeeded.** Its only run (manual, on
+  `main`, 2026-08-23) failed. Find out why before tagging anything; it predates
+  the pinning in Phase 3, so it may already be fixed.
+- **Node 20 deprecation warnings** on `actions/checkout@v4` and
+  `actions/setup-python@v5`, in both workflows. Bump to the current majors.
 
 ---
 
@@ -78,26 +79,13 @@ Also here, once tests exist to catch a slip: convert the `ui` dict in
 `fingerino/main.py` to a small dataclass. It is currently annotated
 `dict[str, Any]` so mypy passes, which is honest but not the right shape.
 
-## Phase 4 — trust
-
-All of this is writing, no hardware, no blockers.
-
-- **README privacy section, prominent.** The strongest sentence in the project
-  is currently buried in `packaging/build.py`'s DMG readme: *"Video is
-  processed on your Mac and never leaves it."* It belongs at the top of the
-  README with a table of which permission is needed and why (camera;
-  Accessibility on macOS; network exactly once, for a 7 MB model).
-- **`SECURITY.md`** — how to report, plus a "why does SmartScreen flag this"
-  section to point friends at.
-- **Issue template** that asks for `%LOCALAPPDATA%\fingerino\selftest.txt`.
-  That diagnostic file already exists; make sure it reaches the maintainer.
-- **Publish SHA-256 of release artifacts** in the release notes — one CI step,
-  lets a cautious friend verify their download.
+## Phase 4 — trust (done)
 
 Context worth keeping in mind: this app reads the webcam continuously and
 synthesizes global mouse and keyboard input. That is functionally the
 capability set of a RAT, and friends' antivirus will agree. The privacy and
-verification story is not decoration here.
+verification story is not decoration here — keep the README's privacy section
+true as features are added.
 
 ## Phase 5 — performance, measure first
 
