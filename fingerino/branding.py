@@ -38,7 +38,8 @@ def _draw_icon(size: int) -> Image.Image:
         t = y / max(1, n - 1)
         pd.line(
             [(0, y), (n, y)],
-            fill=tuple(int(a + (b - a) * t) for a, b in zip(_BG_TOP, _BG_BOTTOM)) + (255,),
+            fill=tuple(int(a + (b - a) * t)
+                       for a, b in zip(_BG_TOP, _BG_BOTTOM, strict=True)) + (255,),
         )
     mask = Image.new("L", (n, n), 0)
     ImageDraw.Draw(mask).rounded_rectangle([0, 0, n - 1, n - 1], radius, fill=255)
@@ -48,7 +49,7 @@ def _draw_icon(size: int) -> Image.Image:
     # print, the opening widening outward so it reads as a fingertip rather
     # than a bullseye. Fewer, chunkier ridges when the icon is tiny.
     ridges = 3 if size <= 24 else (4 if size <= 48 else 5)
-    width = max(1, int(round(n * (0.075 if size <= 24 else 0.055))))
+    width = max(1, round(n * (0.075 if size <= 24 else 0.055)))
     cx, cy = n / 2, n / 2 - n * 0.03
 
     for i in range(ridges):
@@ -67,7 +68,7 @@ def _draw_icon(size: int) -> Image.Image:
         width / 2, fill=_ACCENT,
     )
 
-    return img.resize((size, size), Image.LANCZOS)
+    return img.resize((size, size), Image.Resampling.LANCZOS)
 
 
 def render(size: int) -> Image.Image:

@@ -63,6 +63,29 @@ def _palm_center(lms: Landmarks) -> tuple[float, float]:
     return xs, ys
 
 
+_INDEX_MCP = 5
+
+
+def cursor_point(lms: Landmarks) -> tuple[float, float]:
+    """Where the cursor rides, per ``config.CURSOR_SOURCE``.
+
+    The choice matters more than it looks. Clicking means extending a finger,
+    which reshapes the hand and moves every point on it — so a cursor riding a
+    fingertip is dragged off target by the very act of committing to a target.
+    The knuckles and the wrist barely move when fingers articulate, which is
+    what makes them better aim points despite feeling less like "pointing".
+    """
+    source = config.CURSOR_SOURCE
+    if source == "palm":
+        return _palm_center(lms)
+    if source == "index_mcp":
+        return lms[_INDEX_MCP][0], lms[_INDEX_MCP][1]
+    if source == "thumb_tip":
+        return lms[4][0], lms[4][1]
+    landmark = lms[config.CURSOR_LANDMARK]
+    return landmark[0], landmark[1]
+
+
 def scroll_point(lms: Landmarks) -> tuple[float, float]:
     """Midpoint of the index and middle fingertips — the scroll anchor.
 
@@ -172,6 +195,11 @@ class ButtonEdges(NamedTuple):
     click: bool = False         # a complete left click (a short point)
     press: bool = False         # button down — a drag is starting
     release: bool = False       # button up — the drag ended
+    # When the posture that caused this edge began. The caller uses it to
+    # deliver the button where the cursor was *before* the hand started
+    # reshaping, rather than wherever it drifted to by the time the edge
+    # arrived. None on a release, which belongs at the current position.
+    anchor_t: float | None = None
 
 
 class DragTrigger:
@@ -197,6 +225,18 @@ class DragTrigger:
         # Ignore the posture until it has been seen broken once, so a hand
         # that arrives already pointing doesn't fire on sight.
         self._ignore = True
+
+    @property
+    def pending_since(self) -> float | None:
+        """When the pending point began, or None if none is pending.
+
+        "Pending" means the posture is being held but has not yet latched into
+        a drag — the window in which the user is committing to a target and
+        the cursor should stop moving.
+        """
+        if self.down or self._ignore:
+            return None
+        return self._on_since
 
     def progress(self, now: float) -> float:
         """How far a pending point has come towards latching as a drag, 0..1."""
@@ -224,7 +264,7 @@ class DragTrigger:
                     and now - self._last_t >= config.CLICK_COOLDOWN_S):
                 self.down = True
                 self._down_since = now
-                return ButtonEdges(press=True)
+                return ButtonEdges(press=True, anchor_t=self._on_since)
             return ButtonEdges()
 
         # Posture gone: whatever it was can start fresh next time.
@@ -241,11 +281,12 @@ class DragTrigger:
             return ButtonEdges(release=self._end(now))
 
         # A point that ended before the threshold: an ordinary click.
+        anchor = self._on_since
         self._on_since = self._off_since = None
         if now - self._last_t < config.CLICK_COOLDOWN_S:
             return ButtonEdges()
         self._last_t = now
-        return ButtonEdges(click=True)
+        return ButtonEdges(click=True, anchor_t=anchor)
 
     def _end(self, now: float, ignore: bool = False) -> bool:
         """Drop the button and close out the episode. Always True — an edge."""
@@ -277,6 +318,9 @@ class GestureOutput:
     hold_progress: float = 0.0  # 0..1 while both palms are being held
     exit: bool = False
     exit_progress: float = 0.0  # 0..1 while the X is being held
+    aiming: bool = False        # a point is pending — the user is committing
+    aim_anchor_t: float | None = None   # when that pending point began
+    anchor_t: float | None = None       # posture start behind a click/press
 
 
 class GestureEngine:
@@ -382,7 +426,7 @@ class GestureEngine:
         if self._hold_anchor is None or len(self._hold_anchor) != len(centers):
             return True
         return any(math.hypot(c[0] - a[0], c[1] - a[1]) > config.HOLD_MAX_DRIFT
-                   for c, a in zip(centers, self._hold_anchor))
+                   for c, a in zip(centers, self._hold_anchor, strict=True))
 
     def _scroll(self, lms: Landmarks) -> int:
         y = scroll_point(lms)[1]
@@ -430,7 +474,13 @@ class GestureEngine:
         # the posture — relaxing the finger, switching to another gesture,
         # losing the hand — takes the same release path and none of them can
         # strand it down.
-        out.click, out.press, out.release = self._drag.update(pointing, now)
+        edges = self._drag.update(pointing, now)
+        out.click, out.press, out.release = edges.click, edges.press, edges.release
+        out.anchor_t = edges.anchor_t
+        # Pending = committing to a target. The cursor holds still through it,
+        # and starts tracking again the moment it becomes a drag.
+        out.aiming = self._drag.pending_since is not None
+        out.aim_anchor_t = self._drag.pending_since
         out.dragging = self._drag.down
         out.drag_progress = self._drag.progress(now)
         if out.dragging and out.mode == "move":

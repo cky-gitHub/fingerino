@@ -1,8 +1,9 @@
 """Fingerino — webcam hand-tracking mouse.
 
 Gestures (one hand unless noted):
-    Move      thumb tip drives the cursor
-    Click     point (index out, middle in)
+    Move      thumb tip drives the cursor (see config.CURSOR_SOURCE)
+    Click     point (index out, middle in) — lands where you aimed, not
+              where the finger dragged the hand to on its way out
     Drag      hold the point ~0.5s — the button then stays down until the
               finger relaxes
     Scroll    two fingers out (index + middle), move the hand up / down
@@ -29,18 +30,15 @@ import os
 import platform
 import sys
 import time
+import traceback
+from typing import Any
 
 import cv2
 import numpy as np
 
-from . import __version__
-from . import branding
-from . import config
-from . import macui
-from . import system_actions
-from . import winui
+from . import __version__, branding, config, macui, system_actions, winui
 from .cursor_controller import CursorController
-from .gesture_detector import GestureEngine
+from .gesture_detector import GestureEngine, cursor_point
 from .hand_tracker import HandTracker, cache_dir
 from .ui_overlay import UIOverlay, panel_scale_for
 
@@ -125,14 +123,17 @@ def _window_size(screen_w: int, screen_h: int) -> tuple[int, int]:
     return win_w, win_h
 
 
-def _finalize_window(name: str, client_w: int, client_h: int) -> tuple:
+def _finalize_window(name: str, client_w: int, client_h: int):
     """Apply icon, fixed size and always-on-top; return the HWND (or None).
 
-    ``cv2.namedWindow`` only registers the window; the real OS window isn't
-    created until the first ``imshow`` call, so this must run after that —
-    calling it earlier finds no window and silently no-ops.
+    Win32 HighGUI creates the real OS window inside ``cv2.namedWindow`` — not
+    on the first ``imshow``, as this used to claim — and the HWND is unchanged
+    once frames start arriving. So this runs during setup rather than from the
+    frame loop, and the HUD never flashes up bordered and unpinned while the
+    camera warms up. A backend that really does defer creation returns None
+    here and gets picked up by the retry in the loop instead.
     """
-    hwnd = winui.find_window(name)
+    hwnd = winui.find_own_window(name)
     if not hwnd:
         return None
     ico = branding.icon_path(cache_dir())
@@ -195,6 +196,35 @@ def _fatal(message: str) -> None:
     macui.alert(config.WINDOW_NAME, message)
 
 
+def _screen_to_frame_px(cursor, sx: int, sy: int, w: int, h: int) -> tuple[int, int]:
+    """Invert the control-zone mapping: screen pixels back to frame pixels.
+
+    The HUD draws in camera-frame space while the anchored click position is
+    worked out in screen space, so showing the user where a click will really
+    land means coming back the other way.
+    """
+    zx = sx / max(cursor.screen_w - 1, 1)
+    zy = sy / max(cursor.screen_h - 1, 1)
+    nx = zx * (1.0 - 2 * config.CONTROL_ZONE_X_MARGIN) + config.CONTROL_ZONE_X_MARGIN
+    ny = zy * (1.0 - 2 * config.CONTROL_ZONE_Y_MARGIN) + config.CONTROL_ZONE_Y_MARGIN
+    return int(nx * w), int(ny * h)
+
+
+def _anchored_frame_px(cursor, anchor_t: float | None, w: int, h: int):
+    """Where a button with this anchor will actually land, in frame pixels.
+
+    None when anchoring is off, when there is no anchor, or when the position
+    is no longer in the cursor's history — in each of which cases the caller
+    falls back to the live position, which is what used to happen always.
+    """
+    if not config.CLICK_ANCHOR or anchor_t is None:
+        return None
+    pos = cursor.anchor_at(anchor_t - config.CLICK_ANCHOR_LOOKBACK_S)
+    if pos is None:
+        return None
+    return _screen_to_frame_px(cursor, pos[0], pos[1], w, h)
+
+
 def _zone_px(w: int, h: int) -> tuple[int, int, int, int]:
     x1 = int(config.CONTROL_ZONE_X_MARGIN * w)
     x2 = int((1.0 - config.CONTROL_ZONE_X_MARGIN) * w)
@@ -203,7 +233,7 @@ def _zone_px(w: int, h: int) -> tuple[int, int, int, int]:
     return x1, y1, x2, y2
 
 
-def main() -> int:
+def _run() -> int:
     parser = argparse.ArgumentParser(description="Webcam hand-tracking mouse.")
     parser.add_argument("--debug", action="store_true",
                         help="show the raw hand skeleton and FPS")
@@ -276,6 +306,7 @@ def main() -> int:
     cv2.namedWindow(config.WINDOW_NAME, cv2.WINDOW_NORMAL)
     cv2.resizeWindow(config.WINDOW_NAME, win_w, win_h)
     cv2.moveWindow(config.WINDOW_NAME, 0, 0)
+    hwnd = _finalize_window(config.WINDOW_NAME, win_w, win_h)
     if needs_access:
         # A toast lasts a second; this has to stay visible, because until it
         # is fixed the app tracks perfectly and controls nothing.
@@ -287,7 +318,7 @@ def main() -> int:
     # expanded composite (always exp_w x exp_h) -- so the two sets of
     # hit-rects below, precomputed once in those two fixed coordinate
     # spaces, never need to be recomputed per frame.
-    ui = {
+    ui: dict[str, Any] = {
         "menu_open": False,
         "tab_rect": overlay.collapsed_tab_rect(config.CAMERA_WIDTH, config.CAMERA_HEIGHT),
         "close_rect": (close_lx1 + panel_x, close_ly1 + panel_y,
@@ -335,18 +366,18 @@ def main() -> int:
         if _hit(ui["close_rect"], x, y):
             ui["menu_open"] = False
             return
-        for (icon, _), rect in zip(config.GESTURE_TUTORIAL, ui["row_rects"]):
+        for (icon, _), rect in zip(config.GESTURE_TUTORIAL, ui["row_rects"],
+                                   strict=True):
             if _hit(rect, x, y):
                 ui["gesture_enabled"][icon] = not ui["gesture_enabled"][icon]
                 return
 
     cv2.setMouseCallback(config.WINDOW_NAME, _on_mouse)
 
-    hwnd = None
     pinned = False
     # Covers an abrupt close (console X button, logoff, shutdown) that skips
-    # straight past the try/finally below -- reads the current `hwnd` via
-    # closure, so it stays correct once _finalize_window() sets it below.
+    # straight past the try/finally below -- reads `hwnd` via closure, so it
+    # still works if the fallback in the loop is what ends up setting it.
     winui.install_console_handler(lambda: winui.unpin(hwnd))
     prev_menu_open = False
     last_access_t = 0.0
@@ -399,11 +430,25 @@ def main() -> int:
             if tracking:
                 hands_px = [[(int(p[0] * w), int(p[1] * h)) for p in hand]
                             for hand in hands]
-                tip = hands[0][config.CURSOR_LANDMARK]  # thumb tip
+                tip = cursor_point(hands[0])
                 cursor_px = (int(tip[0] * w), int(tip[1] * h))
 
-                if out.mode == "move" and drive and _live("thumb"):
+                # While a point is pending the user is committing to a target,
+                # not still aiming at one -- so the cursor stops here. Without
+                # it, extending the finger reshapes the hand and drags the aim
+                # off the thing being aimed at. Tracking resumes the moment
+                # the point latches into a drag.
+                committing = config.FREEZE_WHILE_AIMING and out.aiming
+                if out.mode == "move" and drive and _live("thumb") and not committing:
                     cursor.update(tip[0], tip[1], now)
+
+                # Show the committed point rather than the hand's live
+                # position, so the reticle stops where the click will land
+                # instead of drifting off it while the finger extends.
+                if out.aiming:
+                    aimed = _anchored_frame_px(cursor, out.aim_anchor_t, w, h)
+                    if aimed is not None:
+                        cursor_px = aimed
                 elif out.mode == "scroll" and drive and _live("two_finger"):
                     cursor.scroll(out.scroll_steps)
 
@@ -432,11 +477,12 @@ def main() -> int:
             # nothing tracked.
             if out.click and _live("point"):
                 if drive:
-                    cursor.click()
-                if cursor_px is not None:
-                    overlay.flash_click(cursor_px)
+                    cursor.click(out.anchor_t)
+                flash_px = _anchored_frame_px(cursor, out.anchor_t, w, h) or cursor_px
+                if flash_px is not None:
+                    overlay.flash_click(flash_px)
             if out.press and drive and _live("point_hold"):
-                cursor.press()
+                cursor.press(out.anchor_t)
             # Not gated by _live("point_hold"): release() is a safe no-op if
             # the button isn't held, but if Drag gets disabled -- or the
             # session paused -- mid-hold this still has to go through or the
@@ -513,15 +559,20 @@ def main() -> int:
                     overlay.toast("Permission granted — restart Fingerino")
 
             if hwnd is None:
+                # Only reached on a HighGUI backend that defers window
+                # creation to the first imshow(); the Win32 one does not.
                 hwnd = _finalize_window(config.WINDOW_NAME, win_w, win_h)
                 last_topmost_t = now
             elif (config.WINDOW_ALWAYS_ON_TOP
                   and now - last_topmost_t >= config.TOPMOST_REASSERT_S):
                 # Other apps promoting themselves to topmost -- or, if one is
                 # also marked always-on-top, simply being clicked -- can bury
-                # us, so the claim is renewed on a real-time cadence rather
-                # than set just once.
-                winui.raise_above_all(hwnd)
+                # us, so the claim is checked on a real-time cadence rather
+                # than set just once. Checked, not blindly renewed: menus,
+                # tooltips, Start and Alt+Tab share the topmost band, and
+                # re-pinning every tick put the HUD on top of all of them.
+                if winui.is_buried(hwnd):
+                    winui.raise_above_all(hwnd)
                 last_topmost_t = now
 
             dt = now - prev_t
@@ -543,11 +594,66 @@ def main() -> int:
         # First thing on every exit path, including the exit gesture and any
         # crash: never leave the user's mouse button held down.
         cursor.release()
+        # Before destroyAllWindows(), while the handle is still live. If it
+        # isn't, _owned() rejects it and this no-ops rather than poking at
+        # whatever window Windows may have recycled the handle to.
+        winui.unpin(hwnd)
         cap.release()
         cv2.destroyAllWindows()
         tracker.close()
 
     return 0
+
+
+def _crash_report(exc: BaseException) -> int:
+    """Write a traceback beside the selftest report and say so on screen.
+
+    A packaged build has no console, so an unhandled exception otherwise makes
+    the window vanish leaving nothing on screen and nothing on disk: the user
+    has "it stopped working" and no way to tell anyone more than that. The
+    cleanup in _run's finally clause has already run by the time this is
+    reached, so the mouse button is released whatever happened.
+    """
+    lines = [
+        f"Fingerino {__version__} crashed",
+        f"python {sys.version.split()[0]} on {sys.platform} "
+        f"({platform.machine()})",
+        f"frozen: {bool(getattr(sys, 'frozen', False))}",
+        f"opencv: {cv2.__version__}",
+        "",
+    ]
+    report = "\n".join(lines) + "".join(traceback.format_exception(exc))
+    print(report, file=sys.stderr)
+
+    path = None
+    try:
+        path = os.path.join(cache_dir(), "crash.txt")
+        with open(path, "w", encoding="utf-8") as fh:
+            fh.write(report)
+    except OSError:
+        path = None          # a cache we cannot write to is not worth a second failure
+
+    message = (f"Fingerino stopped unexpectedly.\n\n"
+               f"{type(exc).__name__}: {exc}")
+    if path:
+        message += (f"\n\nThe details were saved to:\n{path}\n\n"
+                    "Attaching that file to a bug report is the fastest way "
+                    "to get this fixed.")
+    winui.alert(config.WINDOW_NAME, message)
+    macui.alert(config.WINDOW_NAME, message)
+    return 1
+
+
+def main() -> int:
+    """Entry point for all three launch paths; see _run for the real work."""
+    try:
+        return _run()
+    except SystemExit:
+        raise                # argparse --help and friends: not a crash
+    except KeyboardInterrupt:
+        return 130
+    except BaseException as exc:
+        return _crash_report(exc)
 
 
 if __name__ == "__main__":

@@ -67,6 +67,14 @@ if not _fonts:
     raise SystemExit("assets/fonts/*.ttf is missing")
 datas += [(f, os.path.join("assets", "fonts")) for f in _fonts]
 
+# The SIL Open Font License requires its text to accompany the fonts wherever
+# they are redistributed, so it ships beside them rather than only living in
+# the repository. It is also quoted in full in THIRD-PARTY-NOTICES.md.
+_ofl = os.path.join(ROOT, "assets", "fonts", "OFL-LICENSE.txt")
+if not os.path.exists(_ofl):
+    raise SystemExit("assets/fonts/OFL-LICENSE.txt is missing")
+datas += [(_ofl, os.path.join("assets", "fonts"))]
+
 _ico = os.path.join(ROOT, "build", "icons", "fingerino.ico")
 _icns = os.path.join(ROOT, "build", "icons", "fingerino.icns")
 

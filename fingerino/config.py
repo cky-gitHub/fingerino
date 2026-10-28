@@ -45,8 +45,55 @@ ONE_EURO_D_CUTOFF = 1.0
 # ---------------------------------------------------------------------------
 # Cursor source
 # ---------------------------------------------------------------------------
-# Which hand landmark drives the cursor. 4 = thumb tip, 8 = index fingertip.
+# What the cursor rides on.
+#
+# The thumb tip is the default, and the reason is the user rather than the
+# signal. You can see your thumb in the preview and you have fine motor
+# control and proprioception for a fingertip -- aiming it is a deliberate act.
+# Nobody has a mental model of where their index knuckle is in space, so a
+# cursor riding one is something that happens *to* you rather than something
+# you point. A steadier signal you cannot consciously aim is not a better
+# pointer.
+#
+# The steadier options exist because a fingertip does move when the hand
+# reshapes to click. That drift is handled where it is actually caused, by the
+# click anchoring below, which works whichever source is chosen -- so this is
+# a question of feel, not of click accuracy.
+#
+#   "thumb_tip"  the default. Visible, aimable, most cursor range per unit of
+#                arm movement.
+#   "index_mcp"  the index knuckle. Barely moves when a finger extends, still
+#                at the pointing end of the hand. Steadier, harder to aim.
+#   "palm"       centroid of wrist + knuckles. Steadiest of the three; needs
+#                whole-hand movement rather than a flick of the wrist.
+#
+# Compare them with `python -m fingerino.fitts` rather than by feel --
+# everything feels better immediately after you change it.
+CURSOR_SOURCE = "thumb_tip"
+# Used only when CURSOR_SOURCE is "landmark". 4 = thumb tip, 8 = index tip.
 CURSOR_LANDMARK = 4
+
+# ---------------------------------------------------------------------------
+# Click anchoring
+# ---------------------------------------------------------------------------
+# Where a click lands. Not where the cursor is when the click fires — by then
+# the hand has extended a finger and relaxed it again, and at the ~2.5x gain
+# the control zone applies, a centimetre of that drift is tens of screen
+# pixels, which is the size of the button you were aiming at.
+#
+# Instead the moment the pointing posture *begins* is treated as the commit
+# point: the cursor freezes there, and the click is delivered at the position
+# it held slightly before that — because the finger has to travel past
+# INDEX_EXTEND_MARGIN before the posture registers, and the drift starts on
+# the first millimetre of that travel.
+CLICK_ANCHOR = True
+# How far back from the moment the posture registered to take the position.
+CLICK_ANCHOR_LOOKBACK_S = 0.12
+# How much cursor history to keep for that lookup, in seconds.
+CURSOR_HISTORY_S = 0.6
+# Freeze the cursor while a point is pending, so what you committed to is also
+# what you can see. Tracking resumes the instant it latches into a drag.
+FREEZE_WHILE_AIMING = True
 
 # ---------------------------------------------------------------------------
 # Finger posture
@@ -136,7 +183,9 @@ WINDOW_NAME = "Fingerino"
 # Windows-only.
 WINDOW_SCREEN_FRACTION = 1 / 16
 WINDOW_ALWAYS_ON_TOP = True
-# How often to renew the topmost claim, in seconds of wall-clock time. Paced
+# How often to check the topmost claim, in seconds of wall-clock time. It is
+# only renewed when something that is not a menu or other shell UI covers the
+# HUD (see winui.is_buried). Paced
 # by real time rather than frame count so it stays responsive even when
 # MediaPipe's per-frame cost pulls the loop well under 30 fps -- a frame-count
 # cadence would otherwise let another window sit in front for several seconds.

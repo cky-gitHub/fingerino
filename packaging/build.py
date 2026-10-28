@@ -26,7 +26,6 @@ import platform
 import shutil
 import subprocess
 import sys
-import urllib.request
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 PACKAGING = os.path.join(ROOT, "packaging")
@@ -39,7 +38,8 @@ IS_WIN = sys.platform.startswith("win")
 IS_MAC = sys.platform == "darwin"
 
 sys.path.insert(0, ROOT)
-from fingerino import __version__ as VERSION  # noqa: E402
+sys.path.insert(0, PACKAGING)      # for notices.py, beside this file
+from fingerino import __version__ as VERSION
 
 # macOS .iconset wants each size plus its @2x twin, which is the next size up.
 ICNS_SIZES = (16, 32, 128, 256, 512)
@@ -59,22 +59,42 @@ def run(cmd: list[str], **kw) -> None:
 # ---------------------------------------------------------------------------
 
 def ensure_model() -> str:
-    """Download the hand-landmark model into the repo root if it isn't there.
+    """Put the hand-landmark model in the repo root, verified against its pin.
 
     It is gitignored (7 MB) but must exist at build time — the spec copies it
     into the bundle so a packaged app never has to download anything.
+
+    This goes through the same checksum-verified fetch the app uses at
+    runtime, and that matters more here than it does there: whatever lands at
+    this path is baked into every installer we ship, so an unverified blob at
+    build time is an unverified blob on every machine that installs it.
     """
     from fingerino import config
-    from fingerino.hand_tracker import _MODEL_URL
+    from fingerino.hand_tracker import _ensure_model
 
     path = os.path.join(ROOT, config.MODEL_FILENAME)
-    if os.path.exists(path):
-        log(f"model present ({os.path.getsize(path) / 1e6:.1f} MB)")
-        return path
-    log(f"downloading model -> {path}")
-    tmp = path + ".part"
-    urllib.request.urlretrieve(_MODEL_URL, tmp)
-    os.replace(tmp, path)
+    existed = os.path.exists(path)
+    _ensure_model(path, refetch=True)
+    log(f"model {'present' if existed else 'downloaded'}, checksum verified "
+        f"({os.path.getsize(path) / 1e6:.1f} MB)")
+    return path
+
+
+def write_notices() -> str:
+    """Generate THIRD-PARTY-NOTICES.md for the versions in this build.
+
+    Most of what the installers redistribute — MediaPipe, OpenCV, absl-py and
+    flatbuffers under Apache-2.0, pynput and the OpenCV FFmpeg DLL under the
+    LGPL, Inter under the OFL — requires its licence text to travel with it.
+    Generated rather than checked in so it can never describe a different set
+    of versions than the one actually shipped.
+    """
+    import notices
+
+    path = os.path.join(DIST, "THIRD-PARTY-NOTICES.md")
+    os.makedirs(DIST, exist_ok=True)
+    notices.write(path)
+    log(f"notices: {path} ({os.path.getsize(path) / 1000:.0f} KB)")
     return path
 
 
@@ -155,11 +175,15 @@ def _find_iscc() -> str | None:
     return None
 
 
-def package_windows() -> list[str]:
+def package_windows(notices: str) -> list[str]:
     app_dir = os.path.join(DIST, "Fingerino")
     if not os.path.isdir(app_dir):
         raise SystemExit(f"expected {app_dir} — PyInstaller did not produce it")
     out: list[str] = []
+
+    # Inno's [Files] globs this folder recursively and the portable zip is made
+    # from it, so putting the notices here covers both installers at once.
+    shutil.copyfile(notices, os.path.join(app_dir, "THIRD-PARTY-NOTICES.md"))
 
     base = f"Fingerino-{VERSION}-windows-x64"
     out.append(shutil.make_archive(os.path.join(RELEASE, base), "zip",
@@ -254,7 +278,7 @@ Still blocked after step 3? Open Terminal and run:
 """
 
 
-def package_macos() -> list[str]:
+def package_macos(notices: str) -> list[str]:
     app = os.path.join(DIST, "Fingerino.app")
     if not os.path.isdir(app):
         raise SystemExit(f"expected {app} — PyInstaller did not produce it")
@@ -273,6 +297,9 @@ def package_macos() -> list[str]:
     with open(os.path.join(stage, "Read Me First.txt"), "w",
               encoding="utf-8") as fh:
         fh.write(_DMG_READ_ME)
+    # In the disk image rather than inside the bundle: the .app is already
+    # signed by this point and adding a file would invalidate the signature.
+    shutil.copyfile(notices, os.path.join(stage, "THIRD-PARTY-NOTICES.md"))
 
     if os.path.exists(dmg):
         os.remove(dmg)
@@ -302,11 +329,12 @@ def main() -> int:
     ensure_model()
     build_icons()
     run_pyinstaller(args.console)
+    notices = write_notices()
 
     if IS_WIN:
-        made = package_windows()
+        made = package_windows(notices)
     elif IS_MAC:
-        made = package_macos()
+        made = package_macos(notices)
     else:
         log("Linux: the app folder is in dist/Fingerino (no installer target)")
         made = []

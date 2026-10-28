@@ -134,7 +134,7 @@ def _fit_icon(im: Image.Image, box: int, gain: float) -> Image.Image:
     land at well under a pixel and wash out to a grey smudge. Multiplying the
     resized alpha restores the weight without the halo a sharpen filter adds.
     """
-    small = im.resize((box, box), Image.LANCZOS)
+    small = im.resize((box, box), Image.Resampling.LANCZOS)
     if gain == 1.0:
         return small
     a = np.asarray(small).astype(np.float32)
@@ -146,7 +146,8 @@ def _bgr2rgb(c: tuple[int, int, int]) -> tuple[int, int, int]:
     return (c[2], c[1], c[0])
 
 
-def _load_font(size: int, bold: bool = False) -> ImageFont.FreeTypeFont:
+def _load_font(size: int,
+               bold: bool = False) -> ImageFont.FreeTypeFont | ImageFont.ImageFont:
     """Inter, bundled in assets/fonts/, so the app looks the same on every
     machine instead of falling back to whatever system UI font is installed.
     Semibold (not heavy Bold) for emphasis -- reads cleaner at small sizes.
@@ -205,7 +206,7 @@ def _blend_ring(frame, center, radius, color, alpha, thickness=1) -> None:
 def _fs(v: float, scale: float) -> int:
     """The panel's design-unit -> pixel rounding. Shared by UIOverlay.fs and
     the sizing maths so the two can never disagree."""
-    return max(1, int(round(v * scale)))
+    return max(1, round(v * scale))
 
 
 def _panel_design_h(comfortable: bool) -> int:
@@ -230,7 +231,9 @@ def _panel_px_h(scale: float, comfortable: bool) -> int:
     screen. Anything that sizes the window has to measure with this rather
     than trust the design-space estimate.
     """
-    f = lambda v: _fs(v, scale)
+    def f(v):
+        return _fs(v, scale)
+
     row = f(config.PANEL_ROW_H_COMFORTABLE if comfortable
             else config.PANEL_ROW_H_COMPACT)
     sec, sec_gap, card_gap = (f(config.PANEL_SECTION_H),
@@ -342,7 +345,7 @@ class UIOverlay:
         toasts -- uses this: it keeps a *constant apparent size* regardless
         of window size, which is what you want for a HUD element.
         """
-        return max(1, int(round(v * self._scale)))
+        return max(1, round(v * self._scale))
 
     def fs(self, v: float) -> int:
         """Scale a gesture-panel design size into real pixels.
@@ -729,7 +732,7 @@ class UIOverlay:
         lh_label = self.fs(config.PANEL_FONT_LABEL * 1.25)
         lh_desc = self.fs(config.PANEL_FONT_DESC * 1.25)
 
-        for i, ((icon, title), rect) in enumerate(zip(config.GESTURE_TUTORIAL, rows)):
+        for i, ((icon, title), rect) in enumerate(zip(config.GESTURE_TUTORIAL, rows, strict=True)):
             rx1, ry1, rx2, ry2 = rect
             on = enabled is None or enabled.get(icon, True)
             cy = (ry1 + ry2) // 2
@@ -775,7 +778,7 @@ class UIOverlay:
         the window's content area, not a floating card, and a strip of
         background between the two would read as a seam.
         """
-        panel_w, panel_h = self.panel_size(win_w)
+        _panel_w, panel_h = self.panel_size(win_w)
         return {
             "size": (win_w, win_h + panel_h),
             "cam_xy": (0, 0),

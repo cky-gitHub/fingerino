@@ -1,0 +1,47 @@
+# Pinned build environment — used by .github/workflows/release.yml ONLY.
+#
+# pyproject.toml keeps deliberately loose ranges so `pip install fingerino`
+# does not fight whatever a user already has. That is the wrong policy for
+# the installers we hand to other people: with ranges alone, two builds cut a
+# month apart contain different MediaPipe, OpenCV and NumPy binaries, so
+# gesture feel and startup time can shift with no commit to blame. These pins
+# are what make a tag reproducible.
+#
+# Scope: every package that ends up inside the shipped bundle, plus the build
+# tool. Deliberately absent are PyInstaller's platform-specific helpers
+# (pefile and pywin32-ctypes on Windows, macholib and pyobjc on macOS) — a
+# flat pin list cannot be correct on all three runners at once, and those
+# affect how the bundle is assembled rather than how the app behaves.
+#
+# To upgrade, in a clean venv:
+#     pip install -U mediapipe opencv-python pynput numpy pillow pyinstaller
+#     python packaging/build.py            # confirm the bundle still works
+# then regenerate this file and commit it with the version bumps visible in
+# the diff. Upgrading is a normal, reviewable change; drifting is not.
+#
+# Generated against Python 3.12, which is what the release workflow uses.
+
+absl-py==2.5.0
+altgraph==0.17.5
+certifi==2026.5.20
+cffi==2.0.0
+contourpy==1.3.3
+cycler==0.12.1
+flatbuffers==25.12.19
+fonttools==4.63.0
+kiwisolver==1.5.0
+matplotlib==3.11.1
+mediapipe==0.10.35
+numpy==2.4.6
+opencv-contrib-python==5.0.0.93
+opencv-python==5.0.0.93
+packaging==26.2
+pillow==12.3.0
+pycparser==3.0
+pyinstaller==6.22.2
+pyinstaller-hooks-contrib==2026.6
+pynput==1.8.2
+pyparsing==3.3.2
+python-dateutil==2.9.0.post0
+six==1.17.0
+sounddevice==0.5.6

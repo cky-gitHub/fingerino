@@ -15,6 +15,55 @@ Euro Filter so the cursor glides instead of shaking.
 
 ---
 
+## Privacy
+
+**Video is processed on your computer and never leaves it.** It is analysed
+frame by frame in memory — never recorded, never written to disk, never
+uploaded. There is no telemetry, no analytics, no crash reporting, no account
+and no update check.
+
+Fingerino makes **exactly one network request, ever**: the first run downloads
+the 7 MB hand-landmark model from Google's model CDN. The released installers
+already contain it, so **they make no request at all** — this only affects
+`pip`/`pipx` installs. The download is verified against a SHA-256 recorded in
+the source, on every start, and refused if it does not match. To skip it
+entirely, point `FINGERINO_MODEL` at a copy you already have:
+
+```
+set FINGERINO_MODEL=C:\path\to\hand_landmarker.task     # Windows
+export FINGERINO_MODEL=/path/to/hand_landmarker.task    # macOS / Linux
+```
+
+**What it needs, and why:**
+
+| Permission | Why | Platform |
+| --- | --- | --- |
+| Camera | To see your hand. That is the whole app. | Windows, macOS, Linux |
+| Accessibility | To move the cursor and send shortcuts. Without it Fingerino tracks perfectly and controls nothing. | macOS only |
+
+**What it writes to disk** — all inside one folder, and nothing else:
+
+| File | What it is |
+| --- | --- |
+| `hand_landmarker.task` | The downloaded model (absent if your installer bundled it) |
+| `fingerino-v1.ico` | The app icon, drawn on first run |
+| `selftest.txt` | Written by `--selftest`, for when you need to report a problem |
+| `crash.txt` | Written only if Fingerino crashes |
+
+That folder is `%LOCALAPPDATA%\fingerino` on Windows,
+`~/Library/Caches/fingerino` on macOS, and `$XDG_CACHE_HOME/fingerino` (or
+`~/.cache/fingerino`) on Linux. Nothing sends those files anywhere — if you
+attach one to a bug report, that is you choosing to. Uninstalling on Windows
+removes the folder; on macOS, delete it by hand.
+
+Not sure you want to hand a program your mouse? Run `fingerino --no-move`. It
+does everything except control your computer.
+
+See [SECURITY.md](SECURITY.md) for how to report a problem, and why your
+antivirus may object to an app that watches a camera and moves the mouse.
+
+---
+
 ## Gestures
 
 | Gesture | Action |
@@ -178,7 +227,25 @@ Everything worth adjusting is in [`fingerino/config.py`](fingerino/config.py)
 - **Cursor feel** — `ONE_EURO_MIN_CUTOFF` (lower = steadier when still),
   `ONE_EURO_BETA` (higher = snappier when moving fast).
 - **Reach** — `CONTROL_ZONE_*_MARGIN` shrink/grow the mapped rectangle.
-- **Cursor source** — `CURSOR_LANDMARK` (`4` = thumb tip, `8` = index tip).
+- **Cursor source** — `CURSOR_SOURCE`: `thumb_tip` (default), `index_mcp`
+  (the index knuckle) or `palm`. The thumb is the default because you can
+  see it and aim it; the other two are steadier signals but are not points
+  you can consciously point. Click accuracy does not depend on this — that
+  is handled by anchoring, below.
+- **Click anchoring** — `CLICK_ANCHOR` delivers a click where the cursor was
+  just *before* you started pointing, rather than where the hand drifted to
+  by the time the click registered. `CLICK_ANCHOR_LOOKBACK_S` tunes how far
+  back it reaches; `FREEZE_WHILE_AIMING` stops the cursor while you commit.
+
+  Measure a change rather than trusting how it feels — every change feels
+  better for the first two minutes:
+
+  ```
+  python -m fingerino.fitts --label "index_mcp + anchor"
+  ```
+
+  It shows targets, times your clicks and reports throughput and error rate.
+  Run it with an ordinary mouse first for a baseline.
 - **Clicks + drag** — `DRAG_HOLD_S` (how long a point must be held before it
   becomes a drag instead of a click), `CLICK_COOLDOWN_S`,
   `INDEX_EXTEND_MARGIN`, `CLICK_RELEASE_GRACE_S` / `DRAG_RELEASE_GRACE_S` (how
