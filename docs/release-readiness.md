@@ -51,9 +51,14 @@ above stayed hidden. `pythonpath = ["."]` in `pyproject.toml` now covers both.
 
 ## Loose ends found while getting CI green
 
-- **The Release workflow has never succeeded.** Its only run (manual, on
-  `main`, 2026-08-23) failed. Find out why before tagging anything; it predates
-  the pinning in Phase 3, so it may already be fixed.
+- **Intel Macs are dropped.** The first Release run (2026-08-23) died on the
+  Apple Silicon selftest, which the runner's missing Metal GPU explains and
+  `release.yml` now tolerates. The second (2026-10-28) passed Windows and Apple
+  Silicon but could not install `mediapipe==0.10.35` on Intel: MediaPipe's last
+  x86_64 macOS wheel is 0.10.21, which needs NumPy < 2 and protobuf 4. Rather
+  than keep a second, untested pin set, Intel was removed from the matrix.
+- **No Apple Silicon build has been run on a real Mac yet.** CI can only check
+  that the model is in the bundle. Find someone with an M-series Mac.
 - **Node 20 deprecation warnings** on `actions/checkout@v4` and
   `actions/setup-python@v5`, in both workflows. Bump to the current majors.
 
