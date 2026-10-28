@@ -567,9 +567,12 @@ def _run() -> int:
                   and now - last_topmost_t >= config.TOPMOST_REASSERT_S):
                 # Other apps promoting themselves to topmost -- or, if one is
                 # also marked always-on-top, simply being clicked -- can bury
-                # us, so the claim is renewed on a real-time cadence rather
-                # than set just once.
-                winui.raise_above_all(hwnd)
+                # us, so the claim is checked on a real-time cadence rather
+                # than set just once. Checked, not blindly renewed: menus,
+                # tooltips, Start and Alt+Tab share the topmost band, and
+                # re-pinning every tick put the HUD on top of all of them.
+                if winui.is_buried(hwnd):
+                    winui.raise_above_all(hwnd)
                 last_topmost_t = now
 
             dt = now - prev_t

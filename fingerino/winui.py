@@ -79,6 +79,12 @@ def _u():
     u.SetWindowLongW.argtypes = [wintypes.HWND, ctypes.c_int, wintypes.LONG]
     u.IsIconic.restype = wintypes.BOOL
     u.IsIconic.argtypes = [wintypes.HWND]
+    u.IsWindowVisible.restype = wintypes.BOOL
+    u.IsWindowVisible.argtypes = [wintypes.HWND]
+    u.GetWindow.restype = wintypes.HWND
+    u.GetWindow.argtypes = [wintypes.HWND, wintypes.UINT]
+    u.GetWindowRect.restype = wintypes.BOOL
+    u.GetWindowRect.argtypes = [wintypes.HWND, ctypes.POINTER(wintypes.RECT)]
     u.LoadImageW.restype = wintypes.HANDLE
     u.LoadImageW.argtypes = [wintypes.HINSTANCE, wintypes.LPCWSTR, wintypes.UINT,
                              ctypes.c_int, ctypes.c_int, wintypes.UINT]
@@ -267,6 +273,90 @@ def raise_above_all(hwnd) -> None:
     HWND_TOPMOST = wintypes.HWND(-1)
     u.SetWindowPos(hwnd, HWND_TOPMOST, 0, 0, 0, 0,
                    _SWP_NOMOVE | _SWP_NOSIZE | _SWP_NOACTIVATE)
+
+
+_GWL_EXSTYLE = -20
+_WS_EX_TOPMOST = 0x00000008
+_WS_EX_TOOLWINDOW = 0x00000080
+_WS_EX_NOACTIVATE = 0x08000000
+_GW_HWNDPREV = 3
+_DWMWA_CLOAKED = 14
+
+# Topmost system UI that opens briefly over everything and has to stay over
+# everything while it is open -- the HUD included. Re-pinning above these is
+# what made menus, the Start menu and Alt+Tab open *underneath* the HUD.
+_TRANSIENT_CLASSES = frozenset({
+    "#32768",                               # every popup / context menu
+    "tooltips_class32",
+    "ComboLBox",                            # an open dropdown's list
+    "Windows.UI.Core.CoreWindow",           # Start, search, Action Center, toasts
+    "XamlExplorerHostIslandWindow",         # Alt+Tab, Task View (Windows 11)
+    "MultitaskingViewFrame",                # Alt+Tab (Windows 10)
+    "TaskSwitcherWnd",
+    "ForegroundStaging",
+    "Shell_TrayWnd",                        # the taskbar
+    "Shell_SecondaryTrayWnd",
+    "NotifyIconOverflowWindow",             # tray overflow
+    "TopLevelWindowForOverflowXamlIsland",
+    "Xaml_WindowedPopupClass",              # XAML flyouts and menus
+})
+
+
+def _yields_to(cls: str, exstyle: int) -> bool:
+    """Should the HUD let this window sit above it?
+
+    Yes for the shell's own transient UI, and for tool and no-activate
+    windows, which is how apps mark their menus, tooltips and floating
+    palettes. No for anything else: that is an app window covering the HUD.
+    """
+    if cls in _TRANSIENT_CLASSES:
+        return True
+    return bool(exstyle & (_WS_EX_TOOLWINDOW | _WS_EX_NOACTIVATE))
+
+
+def is_buried(hwnd) -> bool:
+    """True when the HUD needs re-pinning: it lost its topmost flag, or an
+    ordinary app window is sitting over it.
+
+    Reads other windows but never changes them. Only topmost windows can be
+    above a topmost HUD, so the walk up the z-order is a short one.
+    """
+    u = _u()
+    if not (u and _owned(hwnd)) or u.IsIconic(hwnd):
+        return False
+    if not (u.GetWindowLongW(hwnd, _GWL_EXSTYLE) & _WS_EX_TOPMOST):
+        return True
+    ours = wintypes.RECT()
+    if not u.GetWindowRect(hwnd, ctypes.byref(ours)):
+        return False
+    cls = ctypes.create_unicode_buffer(256)
+    other = wintypes.RECT()
+    above = u.GetWindow(hwnd, _GW_HWNDPREV)
+    for _ in range(512):  # a z-order can change under us mid-walk
+        if not above:
+            return False
+        if (u.IsWindowVisible(above) and not _cloaked(above)
+                and u.GetWindowRect(above, ctypes.byref(other))
+                and other.left < ours.right and ours.left < other.right
+                and other.top < ours.bottom and ours.top < other.bottom):
+            u.GetClassNameW(above, cls, 256)
+            exstyle = u.GetWindowLongW(above, _GWL_EXSTYLE) & 0xFFFFFFFF
+            if not _yields_to(cls.value, exstyle):
+                return True
+        above = u.GetWindow(above, _GW_HWNDPREV)
+    return False
+
+
+def _cloaked(hwnd) -> bool:
+    """Visible to user32 but hidden by DWM -- suspended UWP apps, other
+    virtual desktops. Those cover nothing, so they never count."""
+    try:
+        value = wintypes.DWORD()
+        ctypes.WinDLL("dwmapi").DwmGetWindowAttribute(
+            hwnd, _DWMWA_CLOAKED, ctypes.byref(value), ctypes.sizeof(value))
+        return bool(value.value)
+    except Exception:
+        return False
 
 
 def unpin(hwnd) -> None:

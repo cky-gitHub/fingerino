@@ -183,7 +183,9 @@ WINDOW_NAME = "Fingerino"
 # Windows-only.
 WINDOW_SCREEN_FRACTION = 1 / 16
 WINDOW_ALWAYS_ON_TOP = True
-# How often to renew the topmost claim, in seconds of wall-clock time. Paced
+# How often to check the topmost claim, in seconds of wall-clock time. It is
+# only renewed when something that is not a menu or other shell UI covers the
+# HUD (see winui.is_buried). Paced
 # by real time rather than frame count so it stays responsive even when
 # MediaPipe's per-frame cost pulls the loop well under 30 fps -- a frame-count
 # cadence would otherwise let another window sit in front for several seconds.

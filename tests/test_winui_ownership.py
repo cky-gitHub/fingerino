@@ -38,6 +38,7 @@ def test_mutators_no_op_on_a_handle_we_do_not_own():
     winui.make_borderless(stranger)
     winui.resize_client(stranger, 100, 100)
     winui.raise_above_all(stranger)
+    assert winui.is_buried(stranger) is False
     winui.unpin(stranger)
     winui.apply_icon(stranger, "nonexistent.ico")
     assert winui.set_taskbar_icon(stranger, "nonexistent.ico", "x", "y") is False
@@ -48,3 +49,22 @@ def test_helpers_are_inert_off_windows():
         pytest.skip("this is the non-Windows contract")
     assert winui.find_own_window("anything") is None
     assert winui._owned(1) is False
+
+
+@pytest.mark.parametrize("cls", ["#32768", "tooltips_class32", "Windows.UI.Core.CoreWindow",
+                                 "XamlExplorerHostIslandWindow", "Shell_TrayWnd"])
+def test_the_hud_yields_to_shell_ui(cls):
+    # Re-pinning above these is what put the HUD over open menus, Start and
+    # Alt+Tab. They must be allowed to stay on top of it.
+    assert winui._yields_to(cls, 0) is True
+
+
+def test_the_hud_yields_to_tool_and_no_activate_windows():
+    assert winui._yields_to("SomeApp", winui._WS_EX_TOOLWINDOW) is True
+    assert winui._yields_to("SomeApp", winui._WS_EX_NOACTIVATE) is True
+
+
+def test_the_hud_does_not_yield_to_an_ordinary_app_window():
+    # An always-on-top app window covering the HUD is the one case the
+    # re-pin exists for.
+    assert winui._yields_to("Chrome_WidgetWin_1", winui._WS_EX_TOPMOST) is False
