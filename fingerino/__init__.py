@@ -6,4 +6,4 @@ scroll with two fingers, and run window shortcuts with hand swipes.
 See :mod:`fingerino.main`.
 """
 
-__version__ = "0.1.0"
+__version__ = "0.2.0"
