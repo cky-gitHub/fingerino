@@ -248,11 +248,6 @@ _DWMWA_WINDOW_CORNER_PREFERENCE = 33
 _DWMWCP_ROUND = 2
 
 
-class _MARGINS(ctypes.Structure):
-    _fields_ = [("left", ctypes.c_int), ("right", ctypes.c_int),
-                ("top", ctypes.c_int), ("bottom", ctypes.c_int)]
-
-
 def add_shadow(hwnd) -> None:
     """Give a borderless window the drop shadow ordinary windows have, and
     the rounded corners Windows 11 gives them.
@@ -264,6 +259,12 @@ def add_shadow(hwnd) -> None:
     """
     if not (_u() and _owned(hwnd)):
         return
+
+    # Declared here, not at module level: ctypes is only imported on Windows.
+    class _MARGINS(ctypes.Structure):
+        _fields_ = [("left", ctypes.c_int), ("right", ctypes.c_int),
+                    ("top", ctypes.c_int), ("bottom", ctypes.c_int)]
+
     try:
         dwm = ctypes.WinDLL("dwmapi")
         hwnd = wintypes.HWND(hwnd)
