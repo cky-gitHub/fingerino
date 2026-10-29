@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import sys
 
-from pynput.keyboard import Controller, Key
+from pynput.keyboard import Controller, GlobalHotKeys, Key
 
 from . import config
 
@@ -68,3 +68,20 @@ def open_ai_chat() -> None:
     mod = _MODIFIERS.get(config.AI_CHAT_MODIFIER, Key.alt)
     key = _NAMED_KEYS.get(config.AI_CHAT_KEY, config.AI_CHAT_KEY)
     _combo(mod, key)
+
+
+def listen_hotkey(combo: str, callback):
+    """Call ``callback`` from a background thread whenever ``combo`` is pressed.
+
+    ``combo`` uses pynput's syntax, e.g. ``"<ctrl>+<alt>+f"``. Returns the
+    running listener (stop it with ``.stop()``), or None if the combo doesn't
+    parse or the platform refuses a keyboard hook -- a missing hotkey is a
+    lost convenience, never a reason not to start.
+    """
+    try:
+        listener = GlobalHotKeys({combo: callback})
+        listener.daemon = True
+        listener.start()
+        return listener
+    except Exception:
+        return None

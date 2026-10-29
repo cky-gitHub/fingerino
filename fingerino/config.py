@@ -176,12 +176,10 @@ EXIT_MIN_ANGLE_DEG = 25.0           # the two hands must actually cross, not ali
 # ---------------------------------------------------------------------------
 WINDOW_NAME = "Fingerino"
 
-# Shrink the (collapsed) window to this fraction of the screen's area on
-# startup and dock it to the top-left corner. The window grows to fit the
-# gesture guide when that's open (see UIOverlay.expanded_layout) and shrinks
-# back to this size when it closes. Pinning above other windows is
-# Windows-only.
-WINDOW_SCREEN_FRACTION = 1 / 16
+# The HUD covers this fraction of the screen's area, docked to the top-left
+# corner at the camera's aspect ratio. 1/36 is two-thirds the width and height
+# of the original 1/16.
+WINDOW_SCREEN_FRACTION = 1 / 36
 WINDOW_ALWAYS_ON_TOP = True
 # How often to check the topmost claim, in seconds of wall-clock time. It is
 # only renewed when something that is not a menu or other shell UI covers the
@@ -195,10 +193,7 @@ TOPMOST_REASSERT_S = 0.5
 # brightness, not hue. The one exception is the status dot on the camera HUD,
 # which stays green/grey because it reports a live condition rather than
 # decorating anything.
-COLOR_APP_BG = (13, 11, 11)         # window ground behind everything  #0B0B0D
-COLOR_PANEL = (22, 19, 19)          # gesture-panel surface            #131316
-COLOR_CARD = (30, 26, 26)           # one settings row                 #1A1A1E
-COLOR_CARD_HOVER = (40, 35, 35)     # the row under the pointer        #232328
+COLOR_PANEL = (22, 19, 19)          # HUD pill and prompt surface      #131316
 COLOR_PANEL_BORDER = (58, 51, 51)   # hairline border / rule           #33333A
 COLOR_DIVIDER = (58, 51, 51)        # hairline rule inside panels      #33333A
 
@@ -215,62 +210,16 @@ COLOR_ACCENT = (240, 237, 237)      # was a gold accent; now near-white. Marks
 COLOR_OK = (126, 186, 134)          # muted green status dot (live state)
 COLOR_IDLE = (101, 92, 92)          # grey status dot
 
-# Toggle switch. "On" is a lit white track with a dark knob, so the armed
-# state reads from fill rather than from knob position alone.
-COLOR_TOGGLE_TRACK_ON = (240, 237, 237)   # #EDEDF0
-COLOR_TOGGLE_KNOB_ON = (22, 19, 19)       # #131316
-COLOR_TOGGLE_TRACK_OFF = (49, 43, 43)     # #2B2B31
-COLOR_TOGGLE_KNOB_OFF = (125, 116, 116)   # #74747D
-
 PANEL_ALPHA = 0.80                  # opacity of the flat panels
 SHADOW_ALPHA = 0.28                 # soft drop shadow behind panels
 
-# ---------------------------------------------------------------------------
-# Gesture panel geometry, in design units
-# ---------------------------------------------------------------------------
-# Every value below is multiplied by the panel scale (see UIOverlay.fs and
-# ui_overlay.panel_scale_for), which is worked out once at startup from the
-# screen size. The panel therefore keeps its proportions everywhere instead
-# of being frozen in raw pixels -- the old fixed layout wanted 1182px of
-# height on every display, which overflows a 1080p screen and gets squashed.
-PANEL_DESIGN_W = 340                # width the type scale is designed against
-PANEL_PAD = 14                      # panel edge padding
-PANEL_HEADER_H = 40                 # title + subtitle block
-PANEL_SECTION_H = 28                # section label band
-PANEL_SECTION_GAP = 12              # between one section and the next
-PANEL_CARD_GAP = 4                  # between adjacent rows (Windows 11 spacing)
-PANEL_ROW_H_COMFORTABLE = 46        # two-line row: label + description
-PANEL_ROW_H_COMPACT = 34            # single-line row, label only
-PANEL_ICON = 30                     # gesture sketch, square
-PANEL_ICON_GAP = 10                 # sketch to label
-PANEL_CARD_PAD = 11                 # row's own left/right padding
-PANEL_RADIUS = 4                    # row corner radius
-PANEL_TOGGLE_W = 28
-PANEL_TOGGLE_H = 16
-
-PANEL_FONT_TITLE = 16               # "Gestures"
-PANEL_FONT_SUB = 11                 # "8 of 9 enabled"
-PANEL_FONT_SECTION = 12             # "Pointer"
-PANEL_FONT_LABEL = 13               # row label
-PANEL_FONT_DESC = 11                # row description
-
-# Screen height to leave free below the expanded window (taskbar + breathing
-# room) when working out how big the panel is allowed to be.
-PANEL_SCREEN_MARGIN = 48
-PANEL_SCALE_MIN = 0.85
-PANEL_SCALE_MAX = 2.5
-# Downscaling a 1024px line drawing to ~37px leaves its ~14px strokes at well
-# under a pixel, which washes them out; this multiplies the resized alpha to
-# put the weight back without blurring.
-PANEL_ICON_ALPHA_GAIN = 1.6
-
-# Gesture guide shown as a full page (Tab to toggle), grouped the way a
-# settings page groups related options rather than as one flat run of nine.
+# The gestures as the Home window lists them, grouped the way a settings page
+# groups related options rather than as one flat run of ten.
 # Each row is (icon id, what it does, how you do it) -- the icon id looks up
 # both the sketch in assets/tutorial-gestures/ (see
-# UIOverlay._GESTURE_ICON_FILES) and the per-gesture enabled/disabled toggle
-# state (see main.py). The descriptions restate the behaviour configured
-# above, so keep them in step with e.g. DRAG_HOLD_S.
+# ui_overlay._GESTURE_ICON_FILES) and the per-gesture on/off state (see
+# settings.py). The descriptions restate the behaviour configured above, so
+# keep them in step with e.g. DRAG_HOLD_S.
 GESTURE_GROUPS = (
     ("Pointer", (
         ("thumb", "Move cursor", "Thumb tip steers the pointer"),
