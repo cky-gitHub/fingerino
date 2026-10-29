@@ -75,6 +75,14 @@ if not os.path.exists(_ofl):
     raise SystemExit("assets/fonts/OFL-LICENSE.txt is missing")
 datas += [(_ofl, os.path.join("assets", "fonts"))]
 
+# The Home window's QML, loaded at runtime by shell.py from beside itself.
+# PyInstaller's PySide6 hooks bring Qt's own QML modules (QtQuick.Controls and
+# the FluentWinUI3 style); this is only Fingerino's file.
+_qml = glob.glob(os.path.join(ROOT, "fingerino", "qml", "*.qml"))
+if not _qml:
+    raise SystemExit("fingerino/qml/*.qml is missing")
+datas += [(f, os.path.join("fingerino", "qml")) for f in _qml]
+
 _ico = os.path.join(ROOT, "build", "icons", "fingerino.ico")
 _icns = os.path.join(ROOT, "build", "icons", "fingerino.icns")
 
@@ -87,12 +95,12 @@ a = Analysis(
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
-    # Dev-only and GUI-toolkit packages nothing here imports, plus two of
+    # Dev-only and other GUI-toolkit packages nothing here imports, plus two of
     # MediaPipe's optional dependencies that collect_all drags in (~15 MB).
     # matplotlib is NOT in this list on purpose: `import mediapipe` pulls in
     # mediapipe.python.solutions, which imports it, so dropping it turns
     # every launch into an ImportError.
-    excludes=["tkinter", "PyQt5", "PyQt6", "PySide2", "PySide6",
+    excludes=["tkinter", "PyQt5", "PyQt6", "PySide2",
               "IPython", "pytest", "setuptools", "pip",
               "pandas", "sounddevice"],
     noarchive=False,

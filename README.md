@@ -47,6 +47,7 @@ export FINGERINO_MODEL=/path/to/hand_landmarker.task    # macOS / Linux
 | --- | --- |
 | `hand_landmarker.task` | The downloaded model (absent if your installer bundled it) |
 | `fingerino-v1.ico` | The app icon, drawn on first run |
+| `settings.json` | Which gestures you switched off, and whether you've seen the welcome |
 | `selftest.txt` | Written by `--selftest`, for when you need to report a problem |
 | `crash.txt` | Written only if Fingerino crashes |
 
@@ -94,7 +95,7 @@ current mode.
 palms, keep them still for about a second, and everything stops driving the
 computer — the pill goes grey and reads *Paused*. Do it again and control comes
 back with exactly the gestures that were switched on before; pausing never
-changes what you picked in the guide. One open hand still swipes as usual, so
+changes which gestures you switched on in Home. One open hand still swipes as usual, so
 the two never collide, and the countdown restarts if your palms drift, so a
 two-handed wave can't pause you by accident.
 
@@ -174,27 +175,44 @@ permission** the first time.
 ## Usage
 
 ```bash
-fingerino            # clean HUD, controls the OS
-fingerino --debug    # also draw the raw skeleton + FPS counter
+fingerino            # open Home; press Start to track and control the OS
+fingerino --debug    # also draw the raw skeleton + FPS counter on the HUD
 fingerino --no-move  # track & show the HUD without driving the OS (safe test mode)
 fingerino --camera 1 # pick a different camera index
-fingerino --selftest # check the install (no camera, no window), then exit
+fingerino --selftest # check the install (no camera), then exit
 ```
 
-`python -m fingerino` works the same way. Press **Esc** (or make the Exit
-gesture, or close the window) to quit. Keep your hand inside the on-screen
-**control-zone rectangle** — that region maps to your whole screen.
+`python -m fingerino` works the same way.
+
+Fingerino opens on its **Home** window with the camera **off**. Press **Start**
+and the camera turns on and a small preview (the HUD) appears in the top-left
+corner; keep your hand inside its **control-zone rectangle**, which maps to your
+whole screen. **Stop** in Home turns the camera off again and Home stays open.
+
+Hover over the HUD for two buttons: **–** hides the preview while tracking
+carries on (*Show preview* in Home brings it back), and **✕** stops tracking.
+The Exit gesture stops tracking too. **Ctrl+Alt+F** pauses or resumes gestures
+from any app.
+
+Home's **Gestures** page switches individual gestures on or off; your choices
+are kept after a restart. Closing Home while tracking leaves Fingerino running
+in the system tray (the menu bar on macOS), whose menu can start, stop, pause
+or quit it. Closing Home while tracking is off quits Fingerino. To have
+tracking start as soon as Fingerino opens, turn that on in **Settings**.
 
 ## How it works
 
 | Module | Responsibility |
 | --- | --- |
-| `main.py` | Camera loop; wires everything together, routes modes. |
+| `main.py` | Entry point: command line, `--selftest`, single instance, crash reports. |
 | `hand_tracker.py` | Wraps `HandLandmarker` (LIVE_STREAM); returns landmarks per hand. |
 | `cursor_controller.py` | Thumb → screen mapping, One Euro smoothing, `pynput` move + button + scroll. |
 | `gesture_detector.py` | `GestureEngine`: posture → mode + click / drag / scroll / swipe / shaka / hold / exit. |
 | `system_actions.py` | OS keyboard shortcuts (minimize / restore / Alt+Tab / new chat). |
 | `ui_overlay.py` | All HUD drawing (flat, professional theme). |
+| `engine.py` | One tracking session: camera in, cursor and shortcuts out, on a background thread. |
+| `shell.py`, `qml/Home.qml`, `hud.py` | Home window, HUD, tray icon and hotkey (PySide6 / Qt). |
+| `settings.py` | `settings.json`: the choices that survive a restart. |
 | `config.py` | Every threshold, the control-zone rect, smoothing + gesture params. |
 | `winui.py` | Windows window chrome: icon, taskbar identity, always-on-top. |
 | `macui.py` | macOS Accessibility permission gate + error dialogs. |
@@ -216,7 +234,7 @@ new-chat) must be **held** briefly to guard against accidents.
 Two-hand postures are resolved before anything else: crossed hands are Exit,
 two open palms are Hold, and both shut the one-hand paths out entirely — which
 is why raising both hands to pause can't wave a window away on the way up. Hold
-is a mode rather than a mass toggle, so the per-gesture switches in the guide
+is a mode rather than a mass toggle, so the per-gesture switches in Home
 are left untouched and resuming restores exactly the set that was live.
 
 ## Tuning

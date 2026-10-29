@@ -14,7 +14,7 @@
 # affect how the bundle is assembled rather than how the app behaves.
 #
 # To upgrade, in a clean venv:
-#     pip install -U mediapipe opencv-python pynput numpy pillow pyinstaller
+#     pip install -U mediapipe opencv-python pynput numpy pillow PySide6-Essentials pyinstaller
 #     python packaging/build.py            # confirm the bundle still works
 # then regenerate this file and commit it with the version bumps visible in
 # the diff. Upgrading is a normal, reviewable change; drifting is not.
@@ -42,6 +42,8 @@ pyinstaller==6.22.2
 pyinstaller-hooks-contrib==2026.6
 pynput==1.8.2
 pyparsing==3.3.2
+pyside6-essentials==6.11.3
 python-dateutil==2.9.0.post0
+shiboken6==6.11.3
 six==1.17.0
 sounddevice==0.5.6

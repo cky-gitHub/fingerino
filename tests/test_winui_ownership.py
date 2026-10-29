@@ -19,7 +19,9 @@ def test_the_title_only_lookup_is_gone():
     # The vulnerable API itself. If a refactor reintroduces a name like this,
     # the fix has probably been undone with it.
     assert not hasattr(winui, "find_window")
-    assert hasattr(winui, "find_own_window")
+    # Window handles now come from Qt for windows we created; nothing looks
+    # one up by title any more.
+    assert not hasattr(winui, "find_own_window")
 
 
 @windows_only
@@ -34,20 +36,16 @@ def test_owned_rejects_anything_that_is_not_ours(handle):
 def test_mutators_no_op_on_a_handle_we_do_not_own():
     # Every one of these must return quietly rather than touch the window.
     stranger = 123456789
-    winui.lock_size(stranger)
-    winui.make_borderless(stranger)
-    winui.resize_client(stranger, 100, 100)
     winui.raise_above_all(stranger)
+    winui.add_shadow(stranger)
     assert winui.is_buried(stranger) is False
-    winui.unpin(stranger)
-    winui.apply_icon(stranger, "nonexistent.ico")
-    assert winui.set_taskbar_icon(stranger, "nonexistent.ico", "x", "y") is False
 
 
 def test_helpers_are_inert_off_windows():
     if sys.platform == "win32":
         pytest.skip("this is the non-Windows contract")
-    assert winui.find_own_window("anything") is None
+    winui.add_shadow(1)
+    assert winui.is_buried(1) is False
     assert winui._owned(1) is False
 
 
