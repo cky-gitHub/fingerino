@@ -42,11 +42,15 @@ class Settings:
     # until the user presses Start.
     start_on_open: bool = False
     hotkey: str = DEFAULT_HOTKEY
+    # The pointer module: move, click, drag and scroll. Off by default --
+    # Fingerino is a sign tool first -- and off for upgraders too, since a
+    # v0.2 file has no such field. Turned on from the Gestures page.
+    cursor: bool = False
 
     def to_json(self) -> dict:
         return {"schema": SCHEMA, "gestures": dict(self.gestures),
                 "onboarded": self.onboarded, "start_on_open": self.start_on_open,
-                "hotkey": self.hotkey}
+                "hotkey": self.hotkey, "cursor": self.cursor}
 
     @classmethod
     def from_json(cls, data: object) -> Settings:
@@ -69,6 +73,8 @@ class Settings:
             s.onboarded = data["onboarded"]
         if isinstance(data.get("start_on_open"), bool):
             s.start_on_open = data["start_on_open"]
+        if isinstance(data.get("cursor"), bool):
+            s.cursor = data["cursor"]
         if isinstance(data.get("hotkey"), str) and data["hotkey"].strip():
             s.hotkey = data["hotkey"]
         return s

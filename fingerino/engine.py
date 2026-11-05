@@ -21,8 +21,8 @@ from dataclasses import dataclass
 import cv2
 import numpy as np
 
-from . import config, macui, system_actions
-from .actions import Registry
+from . import config, macui, settings, system_actions
+from .actions import Action, Registry
 from .cursor_controller import CursorController
 from .gesture_detector import GestureEngine, cursor_point
 from .hand_tracker import HandTracker
@@ -78,6 +78,11 @@ def _anchored_frame_px(cursor, anchor_t: float | None, w: int, h: int):
     return _screen_to_frame_px(cursor, pos[0], pos[1], w, h)
 
 
+def perform_action(action: Action) -> None:
+    """Carry out a sign's action on this machine. A seam for the tests."""
+    system_actions.run(action.id)
+
+
 def _zone_px(w: int, h: int) -> tuple[int, int, int, int]:
     x1 = int(config.CONTROL_ZONE_X_MARGIN * w)
     x2 = int((1.0 - config.CONTROL_ZONE_X_MARGIN) * w)
@@ -89,11 +94,11 @@ def _zone_px(w: int, h: int) -> tuple[int, int, int, int]:
 class Session:
     """Track until stopped. Single use: start a new one to track again."""
 
-    def __init__(self, options: Options, gestures: dict[str, bool]) -> None:
+    def __init__(self, options: Options, prefs: settings.Settings) -> None:
         self.options = options
-        # Shared with the Home window, which flips entries from the UI
-        # thread. Only ever read here, one bool at a time.
-        self.gestures = gestures
+        # Shared with the Home window, which flips fields from the UI
+        # thread. Only ever read here, one value at a time.
+        self.prefs = prefs
         self.paused = False
         self._pause_request = threading.Event()
         self._stop = threading.Event()
@@ -148,7 +153,7 @@ class Session:
         def _live(icon: str) -> bool:
             """May this gesture act on this frame? Off if it's switched off in
             Home, and off for everything while the session is paused."""
-            return self.gestures.get(icon, True) and not self.paused
+            return self.prefs.gestures.get(icon, True) and not self.paused
 
         def _toggle_pause() -> None:
             self.paused = not self.paused
@@ -191,12 +196,18 @@ class Session:
 
                 cursor_px = None
                 hands_px = None
+                # Read every frame, so the switch in Home applies at once.
+                # Turning it off mid-drag releases through the trigger's
+                # ordinary path a few frames later.
+                cursor_on = self.prefs.cursor
+                engine.cursor = cursor_on
                 out = engine.update(hands, now)
 
                 # The master switch. Turning the pause *off* is never gated on
                 # the row's own toggle -- switching Hold off while paused would
                 # otherwise leave no gesture able to give control back.
-                if out.hold_toggle and (self.paused or self.gestures.get("both_flat", True)):
+                if out.hold_toggle and (self.paused
+                                        or self.prefs.gestures.get("both_flat", True)):
                     _toggle_pause()
                 if self._pause_request.is_set():
                     self._pause_request.clear()
@@ -231,7 +242,7 @@ class Session:
                     # keyed by the sign's own id.
                     for action in registry.resolve(out, _live):
                         if drive:
-                            system_actions.run(action.id)
+                            perform_action(action)
                         overlay.toast(action.toast)
                 else:
                     cursor.reset()
@@ -265,7 +276,7 @@ class Session:
                     mode=out.mode,
                     mode_label=out.mode_label,
                     cursor_px=cursor_px,
-                    zone_px=_zone_px(w, h),
+                    zone_px=_zone_px(w, h) if cursor_on else None,
                     hands_px=hands_px,
                     exit_progress=out.exit_progress,
                     dragging=out.dragging,

@@ -67,6 +67,11 @@ antivirus may object to an app that watches a camera and moves the mouse.
 
 ## Gestures
 
+The first four rows are the **cursor**, which is **off by default**: until you
+turn on *Control the cursor with your hand* on the Gestures page, Fingerino
+never moves the mouse, and pointing or two fingers do nothing. Everything else
+works either way.
+
 | Gesture | Action |
 | --- | --- |
 | **Thumb** tip | Move the cursor |

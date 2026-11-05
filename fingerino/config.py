@@ -241,6 +241,10 @@ GESTURE_GROUPS = (
     )),
 )
 
+# The rows that belong to the cursor module. With cursor control off (the
+# default, see settings.Settings.cursor) they are shown but greyed out.
+CURSOR_GESTURES = frozenset({"thumb", "point", "point_hold", "two_finger"})
+
 # Flat (icon id, label) view of GESTURE_GROUPS in display order. The gesture
 # gating and the per-gesture toggle state iterate over this, so the grouping
 # above stays purely a presentation concern.

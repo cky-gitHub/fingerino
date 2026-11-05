@@ -424,7 +424,9 @@ class UIOverlay:
              zone_px, hands_px=None, exit_progress=0.0, dragging=False,
              drag_progress=0.0, debug=False, fps=0.0,
              paused=False, hold_progress=0.0) -> np.ndarray:
-        self._draw_zone(frame, zone_px, tracking)
+        # No control zone without the cursor: it maps the hand to the screen.
+        if zone_px is not None:
+            self._draw_zone(frame, zone_px, tracking)
 
         if debug and hands_px:
             self._draw_skeleton(frame, hands_px)

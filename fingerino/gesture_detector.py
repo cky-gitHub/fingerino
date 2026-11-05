@@ -324,7 +324,7 @@ BUILTIN_SIGNS = (SIGN_SHAKA, SIGN_FLAT_DOWN, SIGN_FLAT_UP, SIGN_FLAT_LEFT, SIGN_
 # ---------------------------------------------------------------------------
 @dataclass
 class GestureOutput:
-    mode: str = "none"          # none | move | scroll | flat | shaka | hold | exit
+    mode: str = "none"          # none | idle | move | scroll | flat | shaka | hold | exit
     mode_label: str = ""
     click: bool = False         # a short point — a discrete left click
     press: bool = False         # left button just went down (drag starting)
@@ -347,7 +347,16 @@ class GestureOutput:
 
 
 class GestureEngine:
-    def __init__(self) -> None:
+    """Per-frame classifier. ``cursor`` says whether the pointer module is on.
+
+    With the cursor off, nothing here can produce a click, press or scroll,
+    and the pointing and two-finger poses are left unclaimed -- free for
+    signs. Turning it off mid-drag needs nothing special: the button trigger
+    just stops seeing the point and lets go through its usual release path.
+    """
+
+    def __init__(self, cursor: bool = True) -> None:
+        self.cursor = cursor
         self._drag = DragTrigger()
         self._scroll_prev_y: float | None = None
         self._scroll_acc = 0.0
@@ -564,8 +573,8 @@ class GestureEngine:
 
         self._swipe.clear()
 
-        # Two fingers -> scroll.
-        if is_two_finger(primary):
+        # Two fingers -> scroll. Part of the cursor module.
+        if self.cursor and is_two_finger(primary):
             self._reset_shaka()
             out.mode = "scroll"
             out.mode_label = "Scroll"
@@ -591,7 +600,11 @@ class GestureEngine:
 
         self._reset_shaka()
 
-        # Default: move, and point to click / hold the point to drag.
+        # Default: move, and point to click / hold the point to drag -- or,
+        # with the cursor off, nothing at all.
+        if not self.cursor:
+            out.mode = "idle"
+            return False
         out.mode = "move"
         out.mode_label = "Move"
         return is_pointing(primary)

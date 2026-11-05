@@ -86,3 +86,17 @@ def test_closing_home_while_off_quits(app, monkeypatch):
     monkeypatch.setattr(a, "quit", lambda: quits.append(True))
     a.bridge.homeClosed()
     assert quits == [True]
+
+
+def test_cursor_switch_is_saved_and_marks_the_pointer_group(app):
+    a, data = app
+    assert a.bridge.property("cursorEnabled") is False
+    a.bridge.setCursorEnabled(True)
+    stored = json.loads((data / settings.FILENAME).read_text(encoding="utf-8"))
+    assert stored["cursor"] is True
+    assert a.bridge.property("cursorEnabled") is True
+    a.bridge.setCursorEnabled(False)
+    groups = a.bridge.property("groups")
+    pointer = [g for g in groups if g["cursor"]]
+    assert [g["name"] for g in pointer] == ["Pointer"]
+    assert {r["icon"] for r in pointer[0]["rows"] if r["cursor"]} == config.CURSOR_GESTURES

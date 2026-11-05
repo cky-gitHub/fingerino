@@ -193,9 +193,10 @@ ApplicationWindow {
                             wrapMode: Text.WordWrap
                             font.pixelSize: 12
                             opacity: 0.7
-                            text: "Press Start, then hold one hand up in front of your camera. "
-                                + "Steer the pointer with your thumb and point your index finger "
-                                + "to click. The Gestures page has the rest.\n\n"
+                            text: "Press Start, then hold one hand up in front of your camera "
+                                + "and make a shaka (thumb and little finger out) to try a sign. "
+                                + "The Gestures page lists the rest, lets you change what each "
+                                + "sign does, and has the switch for controlling the cursor.\n\n"
                                 + "Your camera stays off until you press Start, and your video "
                                 + "is processed on this computer and never leaves it."
                         }
@@ -317,11 +318,29 @@ ApplicationWindow {
                         Layout.fillWidth: true
                         spacing: 4
                         SectionHeader { text: group.modelData.name }
+                        // The cursor module's master switch, at the head of
+                        // the group it controls. Off by default.
+                        Card {
+                            visible: group.modelData.cursor
+                            title: "Control the cursor with your hand"
+                            description: win.bridge.cursorEnabled
+                                ? "On: your hand moves the pointer, clicks, drags and scrolls."
+                                : "Off: Fingerino never moves the mouse, and pointing or two "
+                                  + "fingers are free to use as your own signs."
+                            Switch {
+                                checked: win.bridge.cursorEnabled
+                                onToggled: win.bridge.setCursorEnabled(checked)
+                                Accessible.name: "Control the cursor with your hand"
+                            }
+                        }
                         Repeater {
                             model: group.modelData.rows
                             delegate: Card {
                                 id: row
                                 required property var modelData
+                                // Shown, not hidden, while the cursor is off,
+                                // and greyed out to say why (ui-direction 6.3).
+                                enabled: !modelData.cursor || win.bridge.cursorEnabled
                                 title: modelData.label
                                 description: modelData.desc
                                 image: modelData.image

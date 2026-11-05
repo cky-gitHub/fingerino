@@ -1,6 +1,7 @@
 """Fingerino — webcam hand-tracking mouse.
 
-Gestures (one hand unless noted):
+Gestures (one hand unless noted). Move, Click, Drag and Scroll are the cursor,
+off until it is turned on in Home's Gestures page:
     Move      thumb tip drives the cursor (see config.CURSOR_SOURCE)
     Click     point (index out, middle in) — lands where you aimed, not
               where the finger dragged the hand to on its way out

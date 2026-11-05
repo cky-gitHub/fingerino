@@ -113,8 +113,10 @@ class Bridge(QObject):
         # needs rebuilding (rebuilding it is what made it stutter).
         self._groups = [
             {"name": name,
+             "cursor": any(icon in config.CURSOR_GESTURES for icon, _, _ in rows),
              "rows": [{"icon": icon, "label": label, "desc": desc,
-                       "image": self._icons.get(icon, "")}
+                       "image": self._icons.get(icon, ""),
+                       "cursor": icon in config.CURSOR_GESTURES}
                       for icon, label, desc in rows]}
             for name, rows in config.GESTURE_GROUPS]
 
@@ -149,7 +151,11 @@ class Bridge(QObject):
     def _start_on_open(self) -> bool:
         return self._shell.prefs.start_on_open
 
+    def _cursor(self) -> bool:
+        return self._shell.prefs.cursor
+
     onboarded = Property(bool, _onboarded, notify=settingsChanged)
+    cursorEnabled = Property(bool, _cursor, notify=settingsChanged)
     startOnOpen = Property(bool, _start_on_open, notify=settingsChanged)
 
     # -- constants --------------------------------------------------------------
@@ -194,6 +200,12 @@ class Bridge(QObject):
         if icon in self._shell.prefs.gestures:
             self._shell.prefs.gestures[icon] = on
             self._shell.save()
+
+    @Slot(bool)
+    def setCursorEnabled(self, on: bool) -> None:
+        self._shell.prefs.cursor = on
+        self._shell.save()
+        self.settingsChanged.emit()
 
     @Slot(bool)
     def setStartOnOpen(self, on: bool) -> None:
@@ -367,9 +379,9 @@ class Shell:
         size = self.hud.size()
         self.options.preview_size = (round(size.width() * dpr),
                                      round(size.height() * dpr))
-        # The session reads the same dict Home writes, so a switch flipped
+        # The session reads the same object Home writes, so a switch flipped
         # mid-session applies on the next frame.
-        session = Session(self.options, self.prefs.gestures)
+        session = Session(self.options, self.prefs)
         self.session = session
         self.paused = False
         self.hand_seen = False
