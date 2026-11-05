@@ -357,7 +357,7 @@ ApplicationWindow {
         function begin() {
             win.bridge.cancelRecording()
             countdown = 0
-            signName.text = ""
+            signNameField.text = ""
             saveError.text = ""
             open()
         }
@@ -443,7 +443,7 @@ ApplicationWindow {
                 text: win.bridge.recordWarning
             }
             TextField {
-                id: signName
+                id: signNameField
                 visible: recordDialog.phase === "review"
                 Layout.fillWidth: true
                 placeholderText: "e.g. Thumbs up"
@@ -485,7 +485,7 @@ ApplicationWindow {
                     text: "Save and choose what it does"
                     highlighted: true
                     onClicked: {
-                        var name = signName.text
+                        var name = signNameField.text
                         var r = win.bridge.saveSign(name)
                         if (r.error) {
                             saveError.text = r.error
@@ -501,15 +501,22 @@ ApplicationWindow {
 
     Dialog {
         id: renameDialog
+        objectName: "renameDialog"
         property string signId
         anchors.centerIn: parent
         width: Math.min(win.width - 64, 420)
         modal: true
         title: "Rename sign"
         standardButtons: Dialog.Save | Dialog.Cancel
-        function ask(id, name) { signId = id; renameField.text = name; open() }
+        // Qualified on purpose: a bare name can resolve to an element id
+        // elsewhere in this file instead of the property (ids win).
+        function ask(sid, name) {
+            renameDialog.signId = sid
+            renameField.text = name
+            renameDialog.open()
+        }
         onAccepted: if (renameField.text.trim() !== "")
-                        win.bridge.renameSign(signId, renameField.text)
+                        win.bridge.renameSign(renameDialog.signId, renameField.text)
         TextField {
             id: renameField
             width: parent.width
@@ -520,15 +527,22 @@ ApplicationWindow {
 
     Dialog {
         id: deleteDialog
+        objectName: "deleteDialog"
         property string signId
         property string signName
         anchors.centerIn: parent
         width: Math.min(win.width - 64, 420)
         modal: true
-        title: "Delete \u201c" + signName + "\u201d?"
+        title: "Delete \u201c" + deleteDialog.signName + "\u201d?"
         standardButtons: Dialog.Ok | Dialog.Cancel
-        function ask(id, name) { signId = id; signName = name; open() }
-        onAccepted: win.bridge.deleteSign(signId)
+        // Qualified: a bare `signName` once resolved to the record dialog's
+        // text field id, so the assignment threw and the dialog never opened.
+        function ask(sid, name) {
+            deleteDialog.signId = sid
+            deleteDialog.signName = name
+            deleteDialog.open()
+        }
+        onAccepted: win.bridge.deleteSign(deleteDialog.signId)
         Label {
             width: parent.width
             wrapMode: Text.WordWrap
@@ -825,9 +839,15 @@ ApplicationWindow {
                                 }
                                 HoverHandler { id: warnHover }
                                 ToolTip {
+                                    id: warnTip
                                     visible: warnHover.hovered
                                     delay: 250
                                     text: mine.modelData.warning
+                                    contentItem: Label {
+                                        text: warnTip.text
+                                        color: win.warnColor
+                                        wrapMode: Text.WordWrap
+                                    }
                                 }
                             }
                             Button {
@@ -838,10 +858,11 @@ ApplicationWindow {
                             }
                             // Rename and Delete live in a menu, so the row stays
                             // short enough to fit a narrow window.
-                            Button {
+                            ToolButton {
                                 id: moreButton
                                 text: "⋯"
-                                Layout.preferredWidth: implicitHeight
+                                font.pixelSize: 20
+                                flat: true
                                 Accessible.name: "More for " + mine.modelData.name
                                 ToolTip.visible: hovered
                                 ToolTip.delay: 400

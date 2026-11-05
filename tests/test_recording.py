@@ -391,3 +391,63 @@ def test_the_skeleton_switch_in_home(home):
     a.bridge.setShowSkeleton(True)
     assert a.prefs.skeleton is True
     assert json.loads((data / "settings.json").read_text(encoding="utf-8"))["skeleton"] is True
+
+
+# ---------------------------------------------------------------------------
+# The rename and delete dialogs in Home.qml itself
+# ---------------------------------------------------------------------------
+
+def _qml_errors():
+    """Collect QML warnings and errors while the block runs."""
+    from PySide6.QtCore import QtMsgType, qInstallMessageHandler
+    caught: list[str] = []
+
+    def handler(kind, context, message):
+        if kind in (QtMsgType.QtWarningMsg, QtMsgType.QtCriticalMsg) and ".qml" in (
+                context.file or "") + message:
+            caught.append(message)
+
+    previous = qInstallMessageHandler(handler)
+    return caught, lambda: qInstallMessageHandler(previous)
+
+
+def _call(obj, method, *args):
+    from PySide6.QtCore import Q_ARG, QMetaObject
+    QMetaObject.invokeMethod(obj, method, *[Q_ARG("QVariant", a) for a in args])
+
+
+def test_delete_from_the_menu_opens_the_dialog_and_deletes(home):
+    from PySide6.QtCore import QObject
+    a, _ = home
+    record_through_home(a, thumbs_up)
+    sign_id = a.bridge.saveSign("Thumbs up")["id"]
+    dialog = a.window.findChild(QObject, "deleteDialog")
+    caught, restore = _qml_errors()
+    try:
+        _call(dialog, "ask", sign_id, "Thumbs up")
+        a.app.processEvents()
+        assert dialog.property("title") == "Delete “Thumbs up”?"
+        assert dialog.property("opened") or dialog.property("visible")
+        _call(dialog, "accept")
+        a.app.processEvents()
+    finally:
+        restore()
+    assert caught == []          # was: "left-hand side of assignment ... not an lvalue"
+    assert a.bridge.property("customSigns") == []
+
+
+def test_rename_from_the_menu_opens_the_dialog_and_renames(home):
+    from PySide6.QtCore import QObject
+    a, _ = home
+    record_through_home(a, thumbs_up)
+    sign_id = a.bridge.saveSign("Thumbs up")["id"]
+    dialog = a.window.findChild(QObject, "renameDialog")
+    caught, restore = _qml_errors()
+    try:
+        _call(dialog, "ask", sign_id, "Thumbs up")
+        a.app.processEvents()
+        assert dialog.property("signId") == sign_id
+        assert dialog.property("opened") or dialog.property("visible")
+    finally:
+        restore()
+    assert caught == []

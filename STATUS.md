@@ -20,7 +20,7 @@ code, and the cursor is an optional module that is off by default.
   4. Sign matcher (`fingerino/sign_matcher.py`), no UI.
   5. Recording signs in Home (`fingerino/signs.py`, `signs.json`): record,
      name, bind, rename, switch off, delete, "Recognised" feedback.
-- **Tests:** 283 pass, 1 skipped, with all dependencies (the dependency-free
+- **Tests:** 285 pass, 1 skipped, with all dependencies (the dependency-free
   job runs fewer). First real-camera check done on Windows, see below.
 
 ## What needs doing next
@@ -39,6 +39,11 @@ code, and the cursor is an optional module that is off by default.
      (the "UI a bit messed up" report). Fixed: the card's control slot keeps
      its width, and Rename/Delete moved into a "⋯" menu. Warning yellow is
      now one shared colour (`warnColor` in Home.qml).
+   - Delete never opened its confirmation: in `deleteDialog.ask()` the
+     bare name `signName` resolved to the record dialog's text field id
+     (ids win over properties), so the assignment threw. Fixed and covered
+     by a test that drives the real dialog and fails on any QML error.
+   - PASS: crossed-fingers Exit stopped tracking on the real camera.
    - New setting: "Show the hand skeleton" (settings.json `skeleton`, off by
      default), always drawn while recording a sign.
    - The Exit row's picture still shows crossed hands
@@ -49,7 +54,7 @@ code, and the cursor is an optional module that is off by default.
      because overlapping hands make MediaPipe lose one. Camera-tested: no.
    - Swipes: slow, long ones work; short fast ones do not. Poor camera and
      lighting are a likely contributor. Proposal pending, see chat.
-   - Not yet checked: Hold (both palms), the new Exit, macOS.
+   - Not yet checked: Hold (both palms), macOS.
    - First run needs to reach storage.googleapis.com for the model. A failed
      download used to show as a crash with a report to file; it now shows a
      plain "check your connection and press Start" message
