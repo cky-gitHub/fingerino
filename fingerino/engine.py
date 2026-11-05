@@ -25,7 +25,7 @@ from . import config, macui, settings, signs, system_actions
 from .actions import Action, Registry
 from .cursor_controller import CursorController
 from .gesture_detector import GestureEngine, cursor_point
-from .hand_tracker import HandTracker
+from .hand_tracker import HandTracker, ModelDownloadError
 from .ui_overlay import UIOverlay
 
 
@@ -177,7 +177,11 @@ class Session:
                     "using it, or it may be on a different index — try "
                     "starting Fingerino with --camera 1.")
 
-        tracker = HandTracker()
+        try:
+            tracker = HandTracker()
+        except ModelDownloadError as exc:
+            cap.release()
+            return str(exc)
         cursor = CursorController()
         engine = GestureEngine()
         registry = self.registry

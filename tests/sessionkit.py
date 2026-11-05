@@ -90,12 +90,12 @@ class World:
 
 
 def run(monkeypatch, frames, prefs=None, *, drive=True, hook=None, registry=None,
-        library=None):
+        library=None, tracker=None):
     """Run a session over ``frames``; return the World with what happened."""
     world = World(frames)
     world.on_frame_hook = hook
     monkeypatch.setattr(engine, "open_camera", world.open_camera)
-    monkeypatch.setattr(engine, "HandTracker", world.tracker)
+    monkeypatch.setattr(engine, "HandTracker", tracker or world.tracker)
     monkeypatch.setattr(engine, "CursorController", world.cursor)
     monkeypatch.setattr(engine, "time", types.SimpleNamespace(perf_counter=lambda: world.t))
     monkeypatch.setattr(engine.macui, "accessibility_trusted", lambda: True)

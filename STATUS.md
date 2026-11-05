@@ -20,7 +20,7 @@ code, and the cursor is an optional module that is off by default.
   4. Sign matcher (`fingerino/sign_matcher.py`), no UI.
   5. Recording signs in Home (`fingerino/signs.py`, `signs.json`): record,
      name, bind, rename, switch off, delete, "Recognised" feedback.
-- **Tests:** 268 pass, 1 skipped, with all dependencies (the dependency-free
+- **Tests:** 280 pass, 1 skipped, with all dependencies (the dependency-free
   job runs fewer). First real-camera check done on Windows, see below.
 
 ## What needs doing next
@@ -42,9 +42,10 @@ code, and the cursor is an optional module that is off by default.
    - Swipes: slow, long ones work; short fast ones do not. Poor camera and
      lighting are a likely contributor. Proposal pending, see chat.
    - Not yet checked: Hold (both palms), the new Exit, macOS.
-   - Gotcha: first run needs to reach storage.googleapis.com for the model;
-     a failed download is reported as a crash ("attach crash.txt"), which is
-     misleading. Worth a friendlier message.
+   - First run needs to reach storage.googleapis.com for the model. A failed
+     download used to show as a crash with a report to file; it now shows a
+     plain "check your connection and press Start" message
+     (`hand_tracker.ModelDownloadError`).
 
    The checklist, for reference:
    - With the cursor off (default), the mouse never moves.

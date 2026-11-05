@@ -66,3 +66,38 @@ def test_a_download_that_fails_its_checksum_is_discarded(tmp_path, monkeypatch):
         ht._ensure_model(str(target), refetch=True)
     assert not target.exists()                         # never put in place
     assert not target.with_suffix(".task.part").exists()
+
+
+@pytest.mark.parametrize("failure", [
+    TimeoutError("The read operation timed out"),
+    ConnectionResetError("reset"),
+    __import__("urllib.error", fromlist=["URLError"]).URLError("no route"),
+])
+def test_a_failed_download_says_so_plainly_and_leaves_nothing(tmp_path, monkeypatch, failure):
+    # What a user on a blocked or flaky network saw as a "crash".
+    target = tmp_path / "hand_landmarker.task"
+
+    def stalls(url, dest):
+        with open(dest, "wb") as fh:
+            fh.write(b"half a model")
+        raise failure
+
+    monkeypatch.setattr(ht, "_download", stalls)
+    with pytest.raises(ht.ModelDownloadError, match="internet connection"):
+        ht._ensure_model(str(target), refetch=True)
+    assert not target.exists()
+    assert not target.with_suffix(".task.part").exists()
+
+
+def test_a_failed_download_ends_the_session_with_a_message_not_a_crash(monkeypatch):
+    pytest.importorskip("cv2")
+    pytest.importorskip("pynput")
+    import sessionkit
+
+    def offline():
+        raise ht.ModelDownloadError("Couldn't download the hand model. Check your "
+                                    "internet connection and press Start to try again.")
+
+    world = sessionkit.run(monkeypatch, [[]] * 5, tracker=offline)
+    assert world.error and "internet connection" in world.error
+    assert world.frames_out == 0

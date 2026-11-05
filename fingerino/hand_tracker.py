@@ -12,6 +12,7 @@ once on first run into a per-user cache directory and reused thereafter.
 from __future__ import annotations
 
 import hashlib
+import http.client
 import os
 import sys
 import threading
@@ -127,6 +128,14 @@ def _report_progress(done: int, total_size: int) -> None:
         _out(f"\r[fingerino] downloading model ({done / 1e6:.1f} MB)")
 
 
+class ModelDownloadError(RuntimeError):
+    """The hand model couldn't be fetched: offline, blocked or too slow.
+
+    A connection problem, not a bug, so the session reports it as a plain
+    message rather than as a crash with a report to file.
+    """
+
+
 def _sha256(path: str) -> str:
     digest = hashlib.sha256()
     with open(path, "rb") as fh:
@@ -194,6 +203,17 @@ def _ensure_model(path: str, *, refetch: bool = False) -> None:
     tmp = path + ".part"
     try:
         actual = _download(_MODEL_URL, tmp)
+    except (OSError, http.client.HTTPException) as exc:
+        # URLError, timeouts and refused connections are all OSErrors.
+        try:
+            os.remove(tmp)
+        except OSError:
+            pass
+        raise ModelDownloadError(
+            "Couldn't download the hand model, which Fingerino needs once, the "
+            "first time it runs. Check your internet connection and press "
+            f"Start to try again. ({type(exc).__name__}: {exc})"
+        ) from exc
     finally:
         _out("\n")
     if actual != _MODEL_SHA256:
