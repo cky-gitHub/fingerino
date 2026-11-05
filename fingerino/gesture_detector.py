@@ -8,9 +8,15 @@ discrete events each frame:
     index out, middle in -> move      -> drive cursor; a brief point clicks,
                                          a held one presses and drags
     index + middle out   -> scroll    -> vertical fingertip motion scrolls
-    flat hand (4 out)    -> flat      -> a downward wave minimises windows
+    flat hand (4 out)    -> flat      -> a swipe emits a flat_<direction> sign
+    thumb + pinky out    -> shaka     -> held briefly, emits the shaka sign
     both hands flat      -> hold      -> hold both palms still to pause
     both hands crossed   -> exit      -> hold the "X" briefly to quit
+
+Signs are only *named* here. What a sign does is looked up in
+``actions.Registry``, so the detector never decides that a shaka means "open a
+chat". The cursor (move, click, drag, scroll), Hold and Exit are not signs:
+they are the pointer and the session's safety controls, and stay wired in.
 
 All thresholds live in ``config``. Every posture test is built from distances
 to the wrist, so it is rotation-invariant — the gestures work whichever way
@@ -24,7 +30,7 @@ from __future__ import annotations
 
 import math
 from collections import deque
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import NamedTuple
 
 from . import config
@@ -298,6 +304,22 @@ class DragTrigger:
 
 
 # ---------------------------------------------------------------------------
+# Signs
+# ---------------------------------------------------------------------------
+# The built-in signs, by id. Each id is also the key of its on/off switch in
+# Home (config.GESTURE_TUTORIAL / settings.json), which is why the swipes are
+# named after their icons rather than after what they happen to do today.
+SIGN_SHAKA = "shaka"
+SIGN_FLAT_DOWN = "flat_down"
+SIGN_FLAT_UP = "flat_up"
+SIGN_FLAT_LEFT = "flat_left"
+# Detected and emitted, but bound to nothing by default and so not listed in
+# Home -- it has always been seen and ignored.
+SIGN_FLAT_RIGHT = "flat_right"
+BUILTIN_SIGNS = (SIGN_SHAKA, SIGN_FLAT_DOWN, SIGN_FLAT_UP, SIGN_FLAT_LEFT, SIGN_FLAT_RIGHT)
+
+
+# ---------------------------------------------------------------------------
 # Engine
 # ---------------------------------------------------------------------------
 @dataclass
@@ -310,10 +332,11 @@ class GestureOutput:
     dragging: bool = False      # button currently held
     drag_progress: float = 0.0  # 0..1 while a point is arming into a drag
     scroll_steps: int = 0
-    minimize: bool = False      # flat swipe down
-    restore: bool = False       # flat swipe up
-    switch_window: bool = False  # flat swipe left (Alt+Tab)
-    new_chat: bool = False      # shaka sign
+    # Signs completed on this frame, by id (see BUILTIN_SIGNS). What each one
+    # does is up to actions.Registry, not the detector.
+    signs: list[str] = field(default_factory=list)
+    # A sign being held towards firing (the shaka), so the HUD can name it.
+    pending_sign: str | None = None
     hold_toggle: bool = False   # both palms held still — pause / resume
     hold_progress: float = 0.0  # 0..1 while both palms are being held
     exit: bool = False
@@ -535,15 +558,8 @@ class GestureEngine:
             out.mode = "flat"
             out.mode_label = "Flat"
             direction = self._flat_swipe(primary, now)
-            if direction == "down":
-                out.minimize = True
-                out.mode_label = "Minimize"
-            elif direction == "up":
-                out.restore = True
-                out.mode_label = "Restore"
-            elif direction == "left":
-                out.switch_window = True
-                out.mode_label = "Switch"
+            if direction is not None:
+                out.signs.append(f"flat_{direction}")
             return False
 
         self._swipe.clear()
@@ -558,16 +574,17 @@ class GestureEngine:
 
         self._scroll_prev_y = None
 
-        # Shaka sign -> new AI chat (held briefly to avoid accidents).
+        # Shaka sign, held briefly to avoid accidents.
         if is_shaka(primary):
             out.mode = "shaka"
-            out.mode_label = "New chat"
+            out.mode_label = "Shaka"
+            out.pending_sign = SIGN_SHAKA
             if self._shaka_start is None:
                 self._shaka_start = now
             if (now - self._shaka_start >= config.SHAKA_HOLD_S
                     and not self._shaka_fired
                     and now - self._last_shaka_t > config.SHAKA_COOLDOWN_S):
-                out.new_chat = True
+                out.signs.append(SIGN_SHAKA)
                 self._shaka_fired = True
                 self._last_shaka_t = now
             return False

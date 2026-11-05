@@ -22,6 +22,7 @@ import cv2
 import numpy as np
 
 from . import config, macui, system_actions
+from .actions import Registry
 from .cursor_controller import CursorController
 from .gesture_detector import GestureEngine, cursor_point
 from .hand_tracker import HandTracker
@@ -136,6 +137,7 @@ class Session:
         tracker = HandTracker()
         cursor = CursorController()
         engine = GestureEngine()
+        registry = Registry()
         out_w, out_h = opts.preview_size
         # The frame is drawn at native camera resolution then shrunk to the
         # HUD, so HUD sizes must be inflated by this ratio to stay legible.
@@ -225,22 +227,12 @@ class Session:
                     elif out.mode == "scroll" and drive and _live("two_finger"):
                         cursor.scroll(out.scroll_steps)
 
-                    if out.minimize and _live("flat_down"):
+                    # Signs -> actions. A sign's on/off switch in Home is
+                    # keyed by the sign's own id.
+                    for action in registry.resolve(out, _live):
                         if drive:
-                            system_actions.minimize_all()
-                        overlay.toast("Minimized")
-                    if out.restore and _live("flat_up"):
-                        if drive:
-                            system_actions.restore_all()
-                        overlay.toast("Restored")
-                    if out.switch_window and _live("flat_left"):
-                        if drive:
-                            system_actions.switch_window()
-                        overlay.toast("Switch window")
-                    if out.new_chat and _live("shaka"):
-                        if drive:
-                            system_actions.open_ai_chat()
-                        overlay.toast("New chat")
+                            system_actions.run(action.id)
+                        overlay.toast(action.toast)
                 else:
                     cursor.reset()
 

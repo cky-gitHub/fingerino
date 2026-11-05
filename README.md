@@ -207,8 +207,9 @@ tracking start as soon as Fingerino opens, turn that on in **Settings**.
 | `main.py` | Entry point: command line, `--selftest`, single instance, crash reports. |
 | `hand_tracker.py` | Wraps `HandLandmarker` (LIVE_STREAM); returns landmarks per hand. |
 | `cursor_controller.py` | Thumb → screen mapping, One Euro smoothing, `pynput` move + button + scroll. |
-| `gesture_detector.py` | `GestureEngine`: posture → mode + click / drag / scroll / swipe / shaka / hold / exit. |
-| `system_actions.py` | OS keyboard shortcuts (minimize / restore / Alt+Tab / new chat). |
+| `gesture_detector.py` | `GestureEngine`: posture → mode + click / drag / scroll / hold / exit, and named signs (shaka, swipes). |
+| `actions.py` | The registry that maps each sign to its action. Recognising a sign and what it does are kept apart. |
+| `system_actions.py` | OS keyboard shortcuts behind the built-in actions (minimize / restore / Alt+Tab / new chat). |
 | `ui_overlay.py` | All HUD drawing (flat, professional theme). |
 | `engine.py` | One tracking session: camera in, cursor and shortcuts out, on a background thread. |
 | `shell.py`, `qml/Home.qml`, `hud.py` | Home window, HUD, tray icon and hotkey (PySide6 / Qt). |

@@ -1,12 +1,15 @@
-"""OS-level actions triggered by gestures (keyboard shortcuts).
+"""OS-level actions triggered by signs (keyboard shortcuts).
 
 Isolated here so the gesture layer stays platform-agnostic and the shortcuts
-can be changed in one place. On pynput, ``Key.cmd`` is the Windows / Super key.
+can be changed in one place. Which sign runs which of these is decided by
+actions.Registry; :data:`BUILTIN` is how it finds them by id. On pynput,
+``Key.cmd`` is the Windows / Super key.
 """
 
 from __future__ import annotations
 
 import sys
+from collections.abc import Callable
 
 from pynput.keyboard import Controller, GlobalHotKeys, Key
 
@@ -68,6 +71,19 @@ def open_ai_chat() -> None:
     mod = _MODIFIERS.get(config.AI_CHAT_MODIFIER, Key.alt)
     key = _NAMED_KEYS.get(config.AI_CHAT_KEY, config.AI_CHAT_KEY)
     _combo(mod, key)
+
+
+BUILTIN: dict[str, Callable[[], None]] = {
+    "minimize_all": minimize_all,
+    "restore_all": restore_all,
+    "switch_window": switch_window,
+    "open_ai_chat": open_ai_chat,
+}
+
+
+def run(action_id: str) -> None:
+    """Perform the built-in action ``action_id`` (an actions.Action id)."""
+    BUILTIN[action_id]()
 
 
 def listen_hotkey(combo: str, callback):
