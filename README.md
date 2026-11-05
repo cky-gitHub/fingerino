@@ -34,6 +34,10 @@ set FINGERINO_MODEL=C:\path\to\hand_landmarker.task     # Windows
 export FINGERINO_MODEL=/path/to/hand_landmarker.task    # macOS / Linux
 ```
 
+If you bind a sign to a website, Fingerino hands the address to your browser,
+the same as clicking a link; your browser fetches it, not Fingerino. A sign
+bound to a command runs exactly the command you typed, on your computer.
+
 **What it needs, and why:**
 
 | Permission | Why | Platform |
@@ -47,7 +51,8 @@ export FINGERINO_MODEL=/path/to/hand_landmarker.task    # macOS / Linux
 | --- | --- |
 | `hand_landmarker.task` | The downloaded model (absent if your installer bundled it) |
 | `fingerino-v1.ico` | The app icon, drawn on first run |
-| `settings.json` | Which gestures you switched off, and whether you've seen the welcome |
+| `settings.json` | Which gestures you switched off, whether the cursor is on, and whether you've seen the welcome |
+| `actions.json` | What you changed your signs to do (shortcuts, apps, links, commands) |
 | `selftest.txt` | Written by `--selftest`, for when you need to report a problem |
 | `crash.txt` | Written only if Fingerino crashes |
 
@@ -213,8 +218,8 @@ tracking start as soon as Fingerino opens, turn that on in **Settings**.
 | `hand_tracker.py` | Wraps `HandLandmarker` (LIVE_STREAM); returns landmarks per hand. |
 | `cursor_controller.py` | Thumb → screen mapping, One Euro smoothing, `pynput` move + button + scroll. |
 | `gesture_detector.py` | `GestureEngine`: posture → mode + click / drag / scroll / hold / exit, and named signs (shaka, swipes). |
-| `actions.py` | The registry that maps each sign to its action. Recognising a sign and what it does are kept apart. |
-| `system_actions.py` | OS keyboard shortcuts behind the built-in actions (minimize / restore / Alt+Tab / new chat). |
+| `actions.py` | The registry that maps each sign to its action, and `actions.json`. Recognising a sign and what it does are kept apart. |
+| `system_actions.py` | Carries actions out: built-in shortcuts, your own shortcuts, media keys, opening apps / links / files, commands. |
 | `ui_overlay.py` | All HUD drawing (flat, professional theme). |
 | `engine.py` | One tracking session: camera in, cursor and shortcuts out, on a background thread. |
 | `shell.py`, `qml/Home.qml`, `hud.py` | Home window, HUD, tray icon and hotkey (PySide6 / Qt). |
@@ -299,7 +304,12 @@ The **window-management gestures** send different keys per platform, in
 
 On macOS, F11 only works if **Show Desktop** is still bound to it in System
 Settings › Keyboard › Keyboard Shortcuts › Mission Control. Linux sends the
-Windows set; remap it in `system_actions.py` for your desktop.
+Windows set; on any platform you can give a sign a different job from the
+Gestures page instead (**Change**).
+
+Your own actions work on all three: shortcuts and media keys are sent through
+`pynput`; apps, links and files open with `os.startfile` on Windows, `open` on
+macOS and `xdg-open` on Linux; commands run through the system shell.
 
 macOS also needs **Accessibility** permission before any of this works — see
 [The first launch](#the-first-launch). DPI-aware screen sizing is applied

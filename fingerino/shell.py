@@ -20,7 +20,7 @@ from pathlib import Path
 from typing import cast
 
 import numpy as np
-from PySide6.QtCore import Property, QObject, QSize, QTimer, QUrl, Signal, Slot
+from PySide6.QtCore import Property, QObject, QSize, Qt, QTimer, QUrl, Signal, Slot
 from PySide6.QtGui import QAction, QDesktopServices, QIcon, QImage
 from PySide6.QtNetwork import QLocalServer, QLocalSocket
 from PySide6.QtQml import QQmlApplicationEngine
@@ -28,8 +28,9 @@ from PySide6.QtQuick import QQuickWindow
 from PySide6.QtQuickControls2 import QQuickStyle
 from PySide6.QtWidgets import QApplication, QMenu, QSystemTrayIcon
 
-from . import __version__, config, settings, system_actions, winui
+from . import __version__, actions, config, settings, system_actions, winui
 from .engine import Options, Session
+from .gesture_detector import BUILTIN_SIGNS
 from .hud import Hud
 from .ui_overlay import _GESTURE_ICON_FILES, _asset_root
 
@@ -60,6 +61,48 @@ def hotkey_label(combo: str) -> str:
         part = part.strip().strip("<>")
         parts.append(part.upper() if len(part) == 1 else part.capitalize())
     return "+".join(parts)
+
+
+_QT_NAMED_KEYS = {
+    Qt.Key.Key_Space: "space", Qt.Key.Key_Tab: "tab", Qt.Key.Key_Return: "enter",
+    Qt.Key.Key_Enter: "enter", Qt.Key.Key_Escape: "esc",
+    Qt.Key.Key_Backspace: "backspace", Qt.Key.Key_Delete: "delete",
+    Qt.Key.Key_Insert: "insert", Qt.Key.Key_Home: "home", Qt.Key.Key_End: "end",
+    Qt.Key.Key_PageUp: "page_up", Qt.Key.Key_PageDown: "page_down",
+    Qt.Key.Key_Up: "up", Qt.Key.Key_Down: "down", Qt.Key.Key_Left: "left",
+    Qt.Key.Key_Right: "right",
+}
+
+
+def combo_from_qt(key: int, modifiers: int) -> str:
+    """A key press in Home's shortcut recorder -> ``"ctrl+shift+k"``, or "".
+
+    "" while only modifiers are down, so the recorder waits for the real key.
+    Qt calls Cmd "Control" on macOS and Ctrl "Meta"; this undoes that, so
+    what is stored is what pynput will press.
+    """
+    mods = Qt.KeyboardModifier(modifiers)
+    mac = sys.platform == "darwin"
+    names = set()
+    if mods & Qt.KeyboardModifier.ControlModifier:
+        names.add("cmd" if mac else "ctrl")
+    if mods & Qt.KeyboardModifier.MetaModifier:
+        names.add("ctrl" if mac else "cmd")
+    if mods & Qt.KeyboardModifier.AltModifier:
+        names.add("alt")
+    if mods & Qt.KeyboardModifier.ShiftModifier:
+        names.add("shift")
+    if Qt.Key.Key_A <= key <= Qt.Key.Key_Z or Qt.Key.Key_0 <= key <= Qt.Key.Key_9:
+        name = chr(key).lower()
+    elif Qt.Key.Key_F1 <= key <= Qt.Key.Key_F20:
+        name = f"f{key - Qt.Key.Key_F1 + 1}"
+    elif key in _QT_NAMED_KEYS:
+        name = _QT_NAMED_KEYS[Qt.Key(key)]
+    elif 0x21 <= key <= 0x7E and chr(key) != "+":
+        name = chr(key)                  # punctuation
+    else:
+        return ""                        # a modifier on its own, or unknown
+    return actions.normalize_combo("+".join([*names, name])) or ""
 
 
 def hud_size(screen_w: int, screen_h: int) -> tuple[int, int]:
@@ -103,6 +146,7 @@ class Bridge(QObject):
 
     stateChanged = Signal()
     settingsChanged = Signal()
+    bindingsChanged = Signal()
 
     def __init__(self, shell: Shell) -> None:
         super().__init__()
@@ -111,12 +155,14 @@ class Bridge(QObject):
                        for icon, name in _GESTURE_ICON_FILES.items()}
         # Built once: the switches change their own state, so the list never
         # needs rebuilding (rebuilding it is what made it stutter).
+        self._bindings_version = 0
         self._groups = [
             {"name": name,
              "cursor": any(icon in config.CURSOR_GESTURES for icon, _, _ in rows),
              "rows": [{"icon": icon, "label": label, "desc": desc,
                        "image": self._icons.get(icon, ""),
-                       "cursor": icon in config.CURSOR_GESTURES}
+                       "cursor": icon in config.CURSOR_GESTURES,
+                       "sign": icon in BUILTIN_SIGNS}
                       for icon, label, desc in rows]}
             for name, rows in config.GESTURE_GROUPS]
 
@@ -169,7 +215,25 @@ class Bridge(QObject):
     def _hotkey(self) -> str:
         return hotkey_label(self._shell.prefs.hotkey)
 
+    def _action_kinds(self) -> list:
+        return [{"kind": k, "label": v} for k, v in actions.KINDS.items()]
+
+    def _builtin_actions(self) -> list:
+        return [{"id": k, "label": v} for k, v in actions.BUILTIN_TITLES.items()]
+
+    def _media_keys(self) -> list:
+        return [{"id": k, "label": v} for k, v in actions.MEDIA_KEYS.items()]
+
+    def _bindings_version_(self) -> int:
+        return self._bindings_version
+
     groups = Property(list, _groups_, constant=True)
+    actionKinds = Property(list, _action_kinds, constant=True)
+    builtinActions = Property(list, _builtin_actions, constant=True)
+    mediaKeys = Property(list, _media_keys, constant=True)
+    # Bumped on every rebinding; QML reads it inside bindings that call
+    # actionInfo() so they re-evaluate.
+    bindingsVersion = Property(int, _bindings_version_, notify=bindingsChanged)
     version = Property(str, _version, constant=True)
     hotkey = Property(str, _hotkey, constant=True)
 
@@ -206,6 +270,56 @@ class Bridge(QObject):
         self._shell.prefs.cursor = on
         self._shell.save()
         self.settingsChanged.emit()
+
+    # -- what signs do -----------------------------------------------------------
+
+    def _bindings_edited(self) -> None:
+        self._shell.save_actions()
+        self._bindings_version += 1
+        self.bindingsChanged.emit()
+
+    @Slot(str, result="QVariantMap")
+    def actionInfo(self, sign: str) -> dict:
+        return actions.describe(self._shell.registry.action_for(sign))
+
+    @Slot(str, str, str, str, result=str)
+    def setAction(self, sign: str, kind: str, target: str, name: str) -> str:
+        """Bind ``sign`` to a new action; an error message, or "" if done.
+
+        Typing a command here is what approves it.
+        """
+        made = actions.make_action(kind, target, name, approved=True)
+        if isinstance(made, str):
+            return made
+        self._shell.registry.bind(sign, made)
+        self._bindings_edited()
+        return ""
+
+    @Slot(str)
+    def clearAction(self, sign: str) -> None:
+        self._shell.registry.bind(sign, None)
+        self._bindings_edited()
+
+    @Slot(str)
+    def resetAction(self, sign: str) -> None:
+        self._shell.registry.reset(sign)
+        self._bindings_edited()
+
+    @Slot(str, str, str, result=str)
+    def testAction(self, kind: str, target: str, name: str) -> str:
+        """Run an action once, now, from Home; an error message or ""."""
+        made = actions.make_action(kind, target, name)
+        if isinstance(made, str):
+            return made
+        try:
+            system_actions.perform(made)
+        except Exception as exc:
+            return f"That didn't work: {exc}"
+        return ""
+
+    @Slot(int, int, result=str)
+    def comboFromKey(self, key: int, modifiers: int) -> str:
+        return combo_from_qt(key, modifiers)
 
     @Slot(bool)
     def setStartOnOpen(self, on: bool) -> None:
@@ -264,6 +378,7 @@ class Shell:
 
         self.prefs = prefs
         self.data_dir = data_dir
+        self.registry = actions.load(data_dir)
         self.options = options or Options()
         self._on_crash = on_crash
         self.session: Session | None = None
@@ -381,7 +496,7 @@ class Shell:
                                      round(size.height() * dpr))
         # The session reads the same object Home writes, so a switch flipped
         # mid-session applies on the next frame.
-        session = Session(self.options, self.prefs)
+        session = Session(self.options, self.prefs, self.registry)
         self.session = session
         self.paused = False
         self.hand_seen = False
@@ -499,6 +614,9 @@ class Shell:
 
     def save(self) -> None:
         settings.save(self.data_dir, self.prefs)
+
+    def save_actions(self) -> None:
+        actions.save(self.data_dir, self.registry)
 
     def quit(self) -> None:
         self.app.quit()

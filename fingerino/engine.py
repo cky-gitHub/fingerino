@@ -78,9 +78,17 @@ def _anchored_frame_px(cursor, anchor_t: float | None, w: int, h: int):
     return _screen_to_frame_px(cursor, pos[0], pos[1], w, h)
 
 
-def perform_action(action: Action) -> None:
-    """Carry out a sign's action on this machine. A seam for the tests."""
-    system_actions.run(action.id)
+def perform_action(action: Action) -> str | None:
+    """Carry out a sign's action; a short message for the HUD if it failed.
+
+    A missing app or a shortcut the OS refuses must never stop tracking.
+    """
+    try:
+        system_actions.perform(action)
+    except Exception as exc:
+        print(f"[fingerino] action {action.label!r} failed: {exc!r}")
+        return f"Couldn't {action.label[0].lower()}{action.label[1:]}"
+    return None
 
 
 def _zone_px(w: int, h: int) -> tuple[int, int, int, int]:
@@ -94,8 +102,11 @@ def _zone_px(w: int, h: int) -> tuple[int, int, int, int]:
 class Session:
     """Track until stopped. Single use: start a new one to track again."""
 
-    def __init__(self, options: Options, prefs: settings.Settings) -> None:
+    def __init__(self, options: Options, prefs: settings.Settings,
+                 registry: Registry | None = None) -> None:
         self.options = options
+        # Shared with Home too: rebinding a sign applies on the next frame.
+        self.registry = registry or Registry()
         # Shared with the Home window, which flips fields from the UI
         # thread. Only ever read here, one value at a time.
         self.prefs = prefs
@@ -142,7 +153,7 @@ class Session:
         tracker = HandTracker()
         cursor = CursorController()
         engine = GestureEngine()
-        registry = Registry()
+        registry = self.registry
         out_w, out_h = opts.preview_size
         # The frame is drawn at native camera resolution then shrunk to the
         # HUD, so HUD sizes must be inflated by this ratio to stay legible.
@@ -241,9 +252,8 @@ class Session:
                     # Signs -> actions. A sign's on/off switch in Home is
                     # keyed by the sign's own id.
                     for action in registry.resolve(out, _live):
-                        if drive:
-                            perform_action(action)
-                        overlay.toast(action.toast)
+                        failed = perform_action(action) if drive else None
+                        overlay.toast(failed or action.toast)
                 else:
                     cursor.reset()
 

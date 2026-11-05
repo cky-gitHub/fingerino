@@ -82,3 +82,25 @@ def test_exit_gesture_ends_the_session(monkeypatch):
     assert world.error is None
     assert world.i < len(frames) - 1                   # stopped early
     assert world.actions == []
+
+
+def test_a_rebound_shaka_runs_its_new_action(monkeypatch):
+    from fingerino.actions import Registry, make_action
+    registry = Registry()
+    music = make_action("open", "https://open.spotify.com/playlist/x")
+    registry.bind("shaka", music)
+    world = sessionkit.run(monkeypatch, steady([shaka()], 1.0), registry=registry)
+    assert world.actions == [music.id]
+    assert "Open spotify.com" in world.toasts
+
+
+def test_a_failing_action_is_reported_not_fatal(monkeypatch):
+    from fingerino import engine
+    from fingerino.actions import make_action
+
+    def boom(action):
+        raise FileNotFoundError("no such app")
+
+    monkeypatch.setattr(engine.system_actions, "perform", boom)
+    assert engine.perform_action(make_action("open_app", "/nope/Spotify.app")) \
+        == "Couldn't open Spotify"

@@ -9,6 +9,7 @@
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
+import QtQuick.Dialogs
 
 ApplicationWindow {
     id: win
@@ -136,6 +137,202 @@ ApplicationWindow {
             x: 32
             spacing: 4
             Item { implicitHeight: 24 }
+        }
+    }
+
+    // ---- what a sign does ---------------------------------------------------
+
+    // One editor for every sign: pick a kind of action, fill in its one
+    // field, try it, save. Saving applies at once, even while tracking.
+    Dialog {
+        id: actionEditor
+        property string sign
+        property string kind: "builtin"
+        property string target: ""
+        anchors.centerIn: parent
+        width: Math.min(win.width - 64, 520)
+        modal: true
+        title: "What should this sign do?"
+        padding: 20
+
+        function edit(sign, how) {
+            var info = win.bridge.actionInfo(sign)
+            actionEditor.sign = sign
+            howLabel.text = how
+            kind = info.kind === "" ? "builtin" : info.kind
+            target = info.target
+            nameField.text = info.name
+            message.text = ""
+            kindBox.currentIndex = kindBox.indexOfValue(kind)
+            builtinBox.currentIndex = Math.max(0, builtinBox.indexOfValue(target))
+            mediaBox.currentIndex = Math.max(0, mediaBox.indexOfValue(target))
+            keysField.text = kind === "hotkey" ? target : ""
+            pathField.text = (kind === "open_app" || kind === "open") ? target : ""
+            commandField.text = kind === "command" ? target : ""
+            open()
+        }
+
+        function currentTarget() {
+            switch (kind) {
+            case "builtin": return builtinBox.currentValue
+            case "hotkey": return keysField.text
+            case "media": return mediaBox.currentValue
+            case "command": return commandField.text
+            default: return pathField.text
+            }
+        }
+
+        FileDialog {
+            id: fileDialog
+            title: actionEditor.kind === "open_app" ? "Choose an app" : "Choose a file"
+            onAccepted: {
+                var path = decodeURIComponent(selectedFile.toString().replace(
+                    /^file:\/{2}/, ""))
+                // file:///C:/x -> C:/x on Windows; file:///home/x -> /home/x elsewhere.
+                if (/^\/[A-Za-z]:/.test(path))
+                    path = path.substring(1)
+                pathField.text = path
+            }
+        }
+
+        ColumnLayout {
+            anchors.fill: parent
+            spacing: 10
+
+            Label {
+                id: howLabel
+                opacity: 0.7
+                Layout.fillWidth: true
+                wrapMode: Text.WordWrap
+            }
+            ComboBox {
+                id: kindBox
+                Layout.fillWidth: true
+                model: win.bridge.actionKinds
+                textRole: "label"
+                valueRole: "kind"
+                Accessible.name: "Kind of action"
+                onActivated: { actionEditor.kind = currentValue; message.text = "" }
+            }
+            ComboBox {
+                id: builtinBox
+                visible: actionEditor.kind === "builtin"
+                Layout.fillWidth: true
+                model: win.bridge.builtinActions
+                textRole: "label"
+                valueRole: "id"
+                Accessible.name: "Fingerino action"
+            }
+            // A recorder, not a text field (ui-direction section 5): click,
+            // press the shortcut, done.
+            TextField {
+                id: keysField
+                visible: actionEditor.kind === "hotkey"
+                Layout.fillWidth: true
+                readOnly: true
+                placeholderText: "Click here, then press the shortcut"
+                Accessible.name: "Keyboard shortcut"
+                Keys.onPressed: (event) => {
+                    var combo = win.bridge.comboFromKey(event.key, event.modifiers)
+                    if (combo !== "")
+                        text = combo
+                    event.accepted = true
+                }
+            }
+            ComboBox {
+                id: mediaBox
+                visible: actionEditor.kind === "media"
+                Layout.fillWidth: true
+                model: win.bridge.mediaKeys
+                textRole: "label"
+                valueRole: "id"
+                Accessible.name: "Media key"
+            }
+            RowLayout {
+                visible: actionEditor.kind === "open_app" || actionEditor.kind === "open"
+                Layout.fillWidth: true
+                TextField {
+                    id: pathField
+                    Layout.fillWidth: true
+                    placeholderText: actionEditor.kind === "open_app"
+                        ? "The app to open" : "https://… or a file"
+                    Accessible.name: actionEditor.kind === "open_app"
+                        ? "App to open" : "Web address or file"
+                }
+                Button {
+                    text: "Browse…"
+                    onClicked: fileDialog.open()
+                }
+            }
+            TextField {
+                id: commandField
+                visible: actionEditor.kind === "command"
+                Layout.fillWidth: true
+                placeholderText: "The command to run"
+                font.family: "monospace"
+                Accessible.name: "Command to run"
+            }
+            Label {
+                visible: actionEditor.kind === "command"
+                Layout.fillWidth: true
+                wrapMode: Text.WordWrap
+                font.pixelSize: 12
+                opacity: 0.7
+                text: "Runs exactly as typed, through your system's shell, each time "
+                    + "the sign is made. Only use a command you trust."
+            }
+            TextField {
+                id: nameField
+                visible: actionEditor.kind !== "builtin"
+                Layout.fillWidth: true
+                placeholderText: "Name on screen (optional)"
+                Accessible.name: "Name on screen"
+            }
+            Label {
+                id: message
+                visible: text !== ""
+                Layout.fillWidth: true
+                wrapMode: Text.WordWrap
+                font.pixelSize: 12
+                color: "#f85149"
+            }
+            RowLayout {
+                Layout.fillWidth: true
+                Layout.topMargin: 8
+                spacing: 8
+                Button {
+                    text: "Try it"
+                    onClicked: message.text = win.bridge.testAction(
+                        actionEditor.kind, actionEditor.currentTarget(), nameField.text)
+                }
+                Button {
+                    text: "Reset"
+                    Accessible.name: "Reset to what this sign did originally"
+                    onClicked: { win.bridge.resetAction(actionEditor.sign); actionEditor.close() }
+                }
+                Button {
+                    text: "Do nothing"
+                    onClicked: { win.bridge.clearAction(actionEditor.sign); actionEditor.close() }
+                }
+                Item { Layout.fillWidth: true }
+                Button {
+                    text: "Cancel"
+                    onClicked: actionEditor.close()
+                }
+                Button {
+                    text: "Save"
+                    highlighted: true
+                    onClicked: {
+                        var err = win.bridge.setAction(actionEditor.sign, actionEditor.kind,
+                                                       actionEditor.currentTarget(),
+                                                       nameField.text)
+                        if (err === "")
+                            actionEditor.close()
+                        else
+                            message.text = err
+                    }
+                }
+            }
         }
     }
 
@@ -306,8 +503,10 @@ ApplicationWindow {
                     Layout.fillWidth: true
                     wrapMode: Text.WordWrap
                     opacity: 0.7
-                    text: "Turn off any gesture you don't want. Changes apply "
-                        + "immediately, even while tracking, and are remembered."
+                    text: "Turn off any gesture you don't want, or press Change to give a "
+                        + "sign a different job: a shortcut, a media key, an app, a website "
+                        + "or a command. Changes apply immediately, even while tracking, "
+                        + "and are remembered."
                 }
 
                 Repeater {
@@ -341,51 +540,36 @@ ApplicationWindow {
                                 // Shown, not hidden, while the cursor is off,
                                 // and greyed out to say why (ui-direction 6.3).
                                 enabled: !modelData.cursor || win.bridge.cursorEnabled
-                                title: modelData.label
+                                // A sign's card is titled by what it does now,
+                                // which the user may have changed.
+                                title: modelData.sign
+                                    ? (win.bridge.bindingsVersion,
+                                       win.bridge.actionInfo(modelData.icon).label)
+                                    : modelData.label
                                 description: modelData.desc
                                 image: modelData.image
-                                Switch {
-                                    checked: win.bridge.gestureEnabled(row.modelData.icon)
-                                    onToggled: win.bridge.setGestureEnabled(
-                                        row.modelData.icon, checked)
-                                    Accessible.name: row.modelData.label
+                                RowLayout {
+                                    spacing: 12
+                                    Button {
+                                        visible: row.modelData.sign
+                                        text: "Change"
+                                        Accessible.name: "Change what " + row.modelData.desc
+                                            + " does"
+                                        onClicked: actionEditor.edit(row.modelData.icon,
+                                                                     row.modelData.desc)
+                                    }
+                                    Switch {
+                                        checked: win.bridge.gestureEnabled(row.modelData.icon)
+                                        onToggled: win.bridge.setGestureEnabled(
+                                            row.modelData.icon, checked)
+                                        Accessible.name: row.modelData.label
+                                    }
                                 }
                             }
                         }
                     }
                 }
 
-                // Premium, announced but not sold yet. Switching gestures on
-                // and off stays free: it is an accessibility feature
-                // (docs/ui-direction.md, section 5).
-                SectionHeader { text: "Your own gestures" }
-                Card {
-                    title: "Custom gestures"
-                    description: "Give any gesture a different job, such as a keyboard "
-                        + "shortcut, opening an app or media keys, and teach "
-                        + "Fingerino new hand shapes."
-                    RowLayout {
-                        spacing: 12
-                        Label {
-                            text: "Premium"
-                            font.pixelSize: 11
-                            font.weight: Font.DemiBold
-                            color: win.palette.highlightedText
-                            leftPadding: 8
-                            rightPadding: 8
-                            topPadding: 3
-                            bottomPadding: 3
-                            background: Rectangle {
-                                radius: 4
-                                color: win.palette.highlight
-                            }
-                        }
-                        Button {
-                            text: "Coming soon"
-                            enabled: false
-                        }
-                    }
-                }
                 Item { implicitHeight: 24 }
             }
 

@@ -89,7 +89,7 @@ class World:
         return Cursor()
 
 
-def run(monkeypatch, frames, prefs=None, *, drive=True, hook=None):
+def run(monkeypatch, frames, prefs=None, *, drive=True, hook=None, registry=None):
     """Run a session over ``frames``; return the World with what happened."""
     world = World(frames)
     world.on_frame_hook = hook
@@ -112,7 +112,8 @@ def run(monkeypatch, frames, prefs=None, *, drive=True, hook=None):
     monkeypatch.setattr(engine.UIOverlay, "toast", toast)
 
     from fingerino import settings
-    session = engine.Session(engine.Options(drive=drive), prefs or settings.Settings())
+    session = engine.Session(engine.Options(drive=drive), prefs or settings.Settings(),
+                             registry)
     world.session = session
 
     def on_frame(frame):

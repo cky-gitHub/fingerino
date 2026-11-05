@@ -214,7 +214,7 @@ PANEL_ALPHA = 0.80                  # opacity of the flat panels
 SHADOW_ALPHA = 0.28                 # soft drop shadow behind panels
 
 # The gestures as the Home window lists them, grouped the way a settings page
-# groups related options rather than as one flat run of ten.
+# groups related options rather than as one flat run of eleven.
 # Each row is (icon id, what it does, how you do it) -- the icon id looks up
 # both the sketch in assets/tutorial-gestures/ (see
 # ui_overlay._GESTURE_ICON_FILES) and the per-gesture on/off state (see
@@ -227,17 +227,19 @@ GESTURE_GROUPS = (
         ("point_hold", "Drag", "Hold the point for half a second"),
         ("two_finger", "Scroll", "Index and middle finger, move up or down"),
     )),
-    ("Windows", (
+    # The built-in signs. Their label is only the default: Home shows
+    # whatever action each one is bound to (actions.py).
+    ("Signs", (
+        ("shaka", "New chat", "Thumb and little finger out"),
         ("flat_down", "Minimize", "Open palm, swipe down"),
         ("flat_up", "Restore", "Open palm, swipe up"),
         ("flat_left", "Switch window", "Open palm, swipe left"),
+        ("flat_right", "Swipe right", "Open palm, swipe right"),
     )),
-    ("Shortcuts", (
-        ("shaka", "New chat", "Thumb and pinky out"),
-        ("cross", "Exit", "Cross both hands into an X"),
-    )),
+    # Safety controls: always the same job, never rebindable.
     ("Session", (
         ("both_flat", "Hold", "Both palms up to pause all"),
+        ("cross", "Exit", "Cross both hands into an X"),
     )),
 )
 
