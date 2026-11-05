@@ -166,7 +166,7 @@ ApplicationWindow {
             kindBox.currentIndex = kindBox.indexOfValue(kind)
             builtinBox.currentIndex = Math.max(0, builtinBox.indexOfValue(target))
             mediaBox.currentIndex = Math.max(0, mediaBox.indexOfValue(target))
-            keysField.text = kind === "hotkey" ? target : ""
+            keysField.text = kind === "hotkey" ? win.bridge.comboLabel(target) : ""
             pathField.text = (kind === "open_app" || kind === "open") ? target : ""
             commandField.text = kind === "command" ? target : ""
             open()
@@ -333,6 +333,199 @@ ApplicationWindow {
                     }
                 }
             }
+        }
+    }
+
+    // ---- recording a sign ---------------------------------------------------
+
+    Dialog {
+        id: recordDialog
+        property int countdown: 0
+        readonly property string phase: countdown > 0 ? "countdown"
+            : win.bridge.recordState === "idle" ? "intro" : win.bridge.recordState
+        anchors.centerIn: parent
+        width: Math.min(win.width - 64, 520)
+        modal: true
+        title: "Record a sign"
+        padding: 20
+
+        function begin() {
+            win.bridge.cancelRecording()
+            countdown = 0
+            signName.text = ""
+            saveError.text = ""
+            open()
+        }
+        function startCountdown() {
+            // The camera needs a moment to open; the countdown covers it.
+            if (!win.bridge.running)
+                win.bridge.start()
+            saveError.text = ""
+            win.bridge.cancelRecording()
+            countdown = win.bridge.recordCountdown
+            countdownTimer.start()
+        }
+        onClosed: {
+            countdownTimer.stop()
+            countdown = 0
+            win.bridge.cancelRecording()
+        }
+
+        Timer {
+            id: countdownTimer
+            interval: 1000
+            repeat: true
+            onTriggered: {
+                recordDialog.countdown -= 1
+                if (recordDialog.countdown <= 0) {
+                    stop()
+                    win.bridge.captureSign()
+                }
+            }
+        }
+
+        ColumnLayout {
+            anchors.fill: parent
+            spacing: 10
+
+            Label {
+                visible: recordDialog.phase === "intro"
+                Layout.fillWidth: true
+                wrapMode: Text.WordWrap
+                text: "Make the sign with one hand where the camera can see it, and hold it for "
+                    + win.bridge.recordSeconds + " seconds. While you hold it, tilt it a "
+                    + "little and move it nearer and farther, so Fingerino learns its range.\n\n"
+                    + "Only the positions of your finger joints are kept, never a picture."
+            }
+            Label {
+                visible: recordDialog.phase === "countdown"
+                Layout.fillWidth: true
+                horizontalAlignment: Text.AlignHCenter
+                font.pixelSize: 28
+                text: "Get ready\u2026 " + recordDialog.countdown
+            }
+            Label {
+                visible: recordDialog.phase === "capturing"
+                text: "Hold the sign\u2026"
+                font.pixelSize: 16
+            }
+            ProgressBar {
+                visible: recordDialog.phase === "capturing"
+                Layout.fillWidth: true
+                value: win.bridge.recordProgress
+            }
+            Label {
+                visible: recordDialog.phase === "failed"
+                Layout.fillWidth: true
+                wrapMode: Text.WordWrap
+                color: "#f85149"
+                text: win.bridge.recordMessage
+            }
+            Label {
+                visible: recordDialog.phase === "review"
+                Layout.fillWidth: true
+                wrapMode: Text.WordWrap
+                text: "Got it. Give your sign a name."
+            }
+            Label {
+                visible: recordDialog.phase === "review" && win.bridge.recordWarning !== ""
+                Layout.fillWidth: true
+                wrapMode: Text.WordWrap
+                font.pixelSize: 12
+                color: "#d29922"
+                text: win.bridge.recordWarning
+            }
+            TextField {
+                id: signName
+                visible: recordDialog.phase === "review"
+                Layout.fillWidth: true
+                placeholderText: "e.g. Thumbs up"
+                maximumLength: 40
+                Accessible.name: "Sign name"
+                onAccepted: saveButton.clicked()
+            }
+            Label {
+                id: saveError
+                visible: text !== ""
+                Layout.fillWidth: true
+                wrapMode: Text.WordWrap
+                font.pixelSize: 12
+                color: "#f85149"
+            }
+            RowLayout {
+                Layout.fillWidth: true
+                Layout.topMargin: 8
+                spacing: 8
+                Button {
+                    visible: recordDialog.phase === "review"
+                    text: "Record again"
+                    onClicked: recordDialog.startCountdown()
+                }
+                Item { Layout.fillWidth: true }
+                Button {
+                    text: "Cancel"
+                    onClicked: recordDialog.close()
+                }
+                Button {
+                    visible: recordDialog.phase === "intro" || recordDialog.phase === "failed"
+                    text: recordDialog.phase === "failed" ? "Try again" : "Start recording"
+                    highlighted: true
+                    onClicked: recordDialog.startCountdown()
+                }
+                Button {
+                    id: saveButton
+                    visible: recordDialog.phase === "review"
+                    text: "Save and choose what it does"
+                    highlighted: true
+                    onClicked: {
+                        var name = signName.text
+                        var r = win.bridge.saveSign(name)
+                        if (r.error) {
+                            saveError.text = r.error
+                            return
+                        }
+                        recordDialog.close()
+                        actionEditor.edit(r.id, "When you make \u201c" + name.trim() + "\u201d")
+                    }
+                }
+            }
+        }
+    }
+
+    Dialog {
+        id: renameDialog
+        property string signId
+        anchors.centerIn: parent
+        width: Math.min(win.width - 64, 420)
+        modal: true
+        title: "Rename sign"
+        standardButtons: Dialog.Save | Dialog.Cancel
+        function ask(id, name) { signId = id; renameField.text = name; open() }
+        onAccepted: if (renameField.text.trim() !== "")
+                        win.bridge.renameSign(signId, renameField.text)
+        TextField {
+            id: renameField
+            width: parent.width
+            maximumLength: 40
+            Accessible.name: "Sign name"
+        }
+    }
+
+    Dialog {
+        id: deleteDialog
+        property string signId
+        property string signName
+        anchors.centerIn: parent
+        width: Math.min(win.width - 64, 420)
+        modal: true
+        title: "Delete \u201c" + signName + "\u201d?"
+        standardButtons: Dialog.Ok | Dialog.Cancel
+        function ask(id, name) { signId = id; signName = name; open() }
+        onAccepted: win.bridge.deleteSign(signId)
+        Label {
+            width: parent.width
+            wrapMode: Text.WordWrap
+            text: "The sign and what it does are removed. This can't be undone."
         }
     }
 
@@ -570,6 +763,74 @@ ApplicationWindow {
                     }
                 }
 
+                // ---- the user's own signs ----
+                SectionHeader { text: "Your own signs" }
+                Label {
+                    Layout.fillWidth: true
+                    wrapMode: Text.WordWrap
+                    opacity: 0.7
+                    text: "Teach Fingerino a hand sign of your own and choose what it does. "
+                        + "Hold the sign for a moment to use it."
+                }
+                Repeater {
+                    model: win.bridge.customSigns
+                    delegate: Card {
+                        id: mine
+                        required property var modelData
+                        property bool recognised: false
+                        title: modelData.name
+                        description: (recognised ? "\u2713 Recognised just now \u00b7 " : "")
+                            + "Does: " + modelData.action
+                        Connections {
+                            target: win.bridge
+                            function onSignFired(id) {
+                                if (id === mine.modelData.id) {
+                                    mine.recognised = true
+                                    recognisedTimer.restart()
+                                }
+                            }
+                        }
+                        Timer {
+                            id: recognisedTimer
+                            interval: 2500
+                            onTriggered: mine.recognised = false
+                        }
+                        RowLayout {
+                            spacing: 8
+                            Button {
+                                text: "Change"
+                                Accessible.name: "Change what " + mine.modelData.name + " does"
+                                onClicked: actionEditor.edit(mine.modelData.id,
+                                    "When you make \u201c" + mine.modelData.name + "\u201d")
+                            }
+                            Button {
+                                text: "Rename"
+                                Accessible.name: "Rename " + mine.modelData.name
+                                onClicked: renameDialog.ask(mine.modelData.id, mine.modelData.name)
+                            }
+                            Button {
+                                text: "Delete"
+                                Accessible.name: "Delete " + mine.modelData.name
+                                onClicked: deleteDialog.ask(mine.modelData.id, mine.modelData.name)
+                            }
+                            Switch {
+                                checked: mine.modelData.enabled
+                                onToggled: win.bridge.setSignEnabled(mine.modelData.id, checked)
+                                Accessible.name: mine.modelData.name
+                            }
+                        }
+                    }
+                }
+                Card {
+                    title: "Add a sign"
+                    description: "Hold a hand shape in front of the camera for a few seconds, "
+                        + "name it, and choose what it does."
+                    Button {
+                        text: "Record a sign"
+                        highlighted: true
+                        onClicked: recordDialog.begin()
+                    }
+                }
                 Item { implicitHeight: 24 }
             }
 

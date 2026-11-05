@@ -116,6 +116,8 @@ class Session:
         self.paused = False
         self._pause_request = threading.Event()
         self._stop = threading.Event()
+        # Seconds to record for, set from Home; picked up by the next frame.
+        self._record_request: float | None = None
 
     # -- called from other threads -----------------------------------------
 
@@ -127,14 +129,24 @@ class Session:
     def stop(self) -> None:
         self._stop.set()
 
+    def start_recording(self, seconds: float) -> None:
+        """Record a new sign's samples, starting on the next frame. The
+        result arrives through ``run``'s ``on_record``."""
+        self._record_request = seconds
+
     # -- the loop ------------------------------------------------------------
 
     def run(self, on_frame: Callable[[np.ndarray], None],
-            on_state: Callable[[bool, bool], None]) -> str | None:
+            on_state: Callable[[bool, bool], None],
+            on_record: Callable[[float, object], None] | None = None,
+            on_sign: Callable[[str], None] | None = None) -> str | None:
         """Track until stop() or the Exit gesture.
 
         ``on_frame`` gets each finished HUD frame (BGR, ``preview_size``);
         ``on_state`` gets ``(paused, hand_seen)`` whenever either changes.
+        ``on_record`` gets ``(progress, None)`` while a recording runs and
+        ``(1.0, signs.Recording)`` when it ends; ``on_sign`` gets the id of
+        every sign that fires (for Home's "recognised" feedback).
         Returns None on a normal stop, or a message saying what went wrong.
         """
         opts = self.options
@@ -179,6 +191,7 @@ class Session:
                 cursor.reset()
             overlay.toast("Paused — gestures off" if self.paused else "Resumed")
 
+        recorder: signs.Recorder | None = None
         error: str | None = None
         last_state: tuple[bool, bool] | None = None
         last_access_t = 0.0
@@ -256,10 +269,17 @@ class Session:
                         cursor.scroll(out.scroll_steps)
 
                     # Signs -> actions. A sign's on/off switch in Home is
-                    # keyed by the sign's own id.
-                    for action in registry.resolve(out, _live):
-                        failed = perform_action(action) if drive else None
-                        overlay.toast(failed or action.toast)
+                    # keyed by the sign's own id. Nothing fires while a new
+                    # sign is being recorded: the hand is busy showing it.
+                    fired = registry.resolve(out, _live)
+                    if recorder is None:
+                        for action in fired:
+                            failed = perform_action(action) if drive else None
+                            overlay.toast(failed or action.toast)
+                        if on_sign is not None:
+                            for sign in out.signs:
+                                if _live(sign):
+                                    on_sign(sign)
                 else:
                     cursor.reset()
 
@@ -282,6 +302,23 @@ class Session:
                 if out.release and drive:
                     cursor.release()
 
+                # Recording a new sign, from Home.
+                request, self._record_request = self._record_request, None
+                if request is not None:
+                    recorder = signs.Recorder(now, request, cursor_on)
+                record_progress = 0.0
+                if recorder is not None:
+                    handed = result.handedness[0] if result and result.handedness else None
+                    recorder.add(hands[0] if hands else None, handed)
+                    record_progress = recorder.progress(now)
+                    if on_record is not None:
+                        on_record(record_progress, None)
+                    if recorder.done(now):
+                        if on_record is not None:
+                            on_record(1.0, recorder.result())
+                        recorder = None
+                        record_progress = 0.0
+
                 if out.exit and _live("cross"):
                     print("[fingerino] exit gesture — stopping.")
                     break
@@ -302,6 +339,7 @@ class Session:
                     paused=self.paused,
                     hold_progress=out.hold_progress,
                     sign_progress=out.sign_progress,
+                    record_progress=record_progress,
                 )
                 on_frame(cv2.resize(frame, (out_w, out_h), interpolation=cv2.INTER_AREA))
 

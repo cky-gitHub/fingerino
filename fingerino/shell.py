@@ -28,7 +28,7 @@ from PySide6.QtQuick import QQuickWindow
 from PySide6.QtQuickControls2 import QQuickStyle
 from PySide6.QtWidgets import QApplication, QMenu, QSystemTrayIcon
 
-from . import __version__, actions, config, settings, system_actions, winui
+from . import __version__, actions, config, settings, signs, system_actions, winui
 from .engine import Options, Session
 from .gesture_detector import BUILTIN_SIGNS
 from .hud import Hud
@@ -138,6 +138,8 @@ class _Relay(QObject):
     state = Signal(bool, bool)
     finished = Signal(object, object)       # (session, error message or None)
     hotkey = Signal()
+    record = Signal(float, object)          # (progress, signs.Recording or None)
+    sign = Signal(str)                      # a sign fired
 
 
 class Bridge(QObject):
@@ -147,6 +149,9 @@ class Bridge(QObject):
     stateChanged = Signal()
     settingsChanged = Signal()
     bindingsChanged = Signal()
+    signsChanged = Signal()
+    recordChanged = Signal()
+    signFired = Signal(str)                 # a sign's id, as it fires
 
     def __init__(self, shell: Shell) -> None:
         super().__init__()
@@ -227,7 +232,15 @@ class Bridge(QObject):
     def _bindings_version_(self) -> int:
         return self._bindings_version
 
+    def _record_countdown(self) -> int:
+        return config.SIGN_RECORD_COUNTDOWN_S
+
+    def _record_seconds(self) -> int:
+        return round(config.SIGN_RECORD_S)
+
     groups = Property(list, _groups_, constant=True)
+    recordCountdown = Property(int, _record_countdown, constant=True)
+    recordSeconds = Property(int, _record_seconds, constant=True)
     actionKinds = Property(list, _action_kinds, constant=True)
     builtinActions = Property(list, _builtin_actions, constant=True)
     mediaKeys = Property(list, _media_keys, constant=True)
@@ -271,12 +284,73 @@ class Bridge(QObject):
         self._shell.save()
         self.settingsChanged.emit()
 
+    # -- the user's own signs -----------------------------------------------------
+
+    def _custom_signs(self) -> list:
+        reg = self._shell.registry
+        return [{"id": s.id, "name": s.name, "enabled": s.enabled,
+                 "action": actions.describe(reg.action_for(s.id))["label"]}
+                for s in self._shell.library.signs]
+
+    def _record_state(self) -> str:
+        return self._shell.record_state
+
+    def _record_progress(self) -> float:
+        return self._shell.record_progress
+
+    def _record_message(self) -> str:
+        return self._shell.record_message
+
+    def _record_warning(self) -> str:
+        return self._shell.record_warning
+
+    customSigns = Property(list, _custom_signs, notify=signsChanged)
+    # idle -> capturing -> review (or failed); see Shell.capture_sign.
+    recordState = Property(str, _record_state, notify=recordChanged)
+    recordProgress = Property(float, _record_progress, notify=recordChanged)
+    recordMessage = Property(str, _record_message, notify=recordChanged)
+    recordWarning = Property(str, _record_warning, notify=recordChanged)
+
+    @Slot()
+    def captureSign(self) -> None:
+        self._shell.capture_sign()
+
+    @Slot()
+    def cancelRecording(self) -> None:
+        self._shell.reset_recording()
+
+    @Slot(str, result="QVariantMap")
+    def saveSign(self, name: str) -> dict:
+        """Keep the reviewed recording as a new sign: {"id": ...} or {"error": ...}."""
+        return self._shell.save_sign(name)
+
+    @Slot(str, str)
+    def renameSign(self, sign_id: str, name: str) -> None:
+        self._shell.library.rename(sign_id, name)
+        self._shell.save_signs()
+        self.signsChanged.emit()
+
+    @Slot(str, bool)
+    def setSignEnabled(self, sign_id: str, on: bool) -> None:
+        self._shell.library.set_enabled(sign_id, on)
+        self._shell.save_signs()
+        self.signsChanged.emit()
+
+    @Slot(str)
+    def deleteSign(self, sign_id: str) -> None:
+        self._shell.library.delete(sign_id)
+        self._shell.registry.forget(sign_id)
+        self._shell.save_signs()
+        self._shell.save_actions()
+        self.signsChanged.emit()
+
     # -- what signs do -----------------------------------------------------------
 
     def _bindings_edited(self) -> None:
         self._shell.save_actions()
         self._bindings_version += 1
         self.bindingsChanged.emit()
+        self.signsChanged.emit()           # custom sign cards show their action
 
     @Slot(str, result="QVariantMap")
     def actionInfo(self, sign: str) -> dict:
@@ -319,7 +393,13 @@ class Bridge(QObject):
 
     @Slot(int, int, result=str)
     def comboFromKey(self, key: int, modifiers: int) -> str:
-        return combo_from_qt(key, modifiers)
+        """The shortcut being pressed, as people write it ("Ctrl+Shift+K")."""
+        combo = combo_from_qt(key, modifiers)
+        return actions.combo_label(combo) if combo else ""
+
+    @Slot(str, result=str)
+    def comboLabel(self, combo: str) -> str:
+        return actions.combo_label(combo) if combo else ""
 
     @Slot(bool)
     def setStartOnOpen(self, on: bool) -> None:
@@ -379,6 +459,13 @@ class Shell:
         self.prefs = prefs
         self.data_dir = data_dir
         self.registry = actions.load(data_dir)
+        self.library = signs.load(data_dir)
+        # Recording a new sign: see capture_sign().
+        self.record_state = "idle"
+        self.record_progress = 0.0
+        self.record_message = ""
+        self.record_warning = ""
+        self._recording: signs.Recording | None = None
         self.options = options or Options()
         self._on_crash = on_crash
         self.session: Session | None = None
@@ -393,6 +480,8 @@ class Shell:
         self._relay.state.connect(self._on_state)
         self._relay.finished.connect(self._on_finished)
         self._relay.hotkey.connect(self._on_hotkey)
+        self._relay.record.connect(self._on_record)
+        self._relay.sign.connect(self._on_sign)
         # The newest frame from the session thread. Only the latest is kept,
         # so a busy UI thread skips frames instead of queueing them up.
         self._frame_lock = threading.Lock()
@@ -496,7 +585,7 @@ class Shell:
                                      round(size.height() * dpr))
         # The session reads the same object Home writes, so a switch flipped
         # mid-session applies on the next frame.
-        session = Session(self.options, self.prefs, self.registry)
+        session = Session(self.options, self.prefs, self.registry, self.library)
         self.session = session
         self.paused = False
         self.hand_seen = False
@@ -511,7 +600,8 @@ class Shell:
         """Body of the tracking thread."""
         error: str | None
         try:
-            error = session.run(self._on_frame, self._relay.state.emit)
+            error = session.run(self._on_frame, self._relay.state.emit,
+                                self._relay.record.emit, self._relay.sign.emit)
         except Exception as exc:
             error = (self._on_crash(exc) if self._on_crash
                      else f"Tracking stopped unexpectedly: {exc}")
@@ -537,6 +627,68 @@ class Shell:
         if img is not None and self.session is not None:
             self.hud.set_frame(img)
 
+    # -- recording a sign ---------------------------------------------------------
+
+    def _record_update(self, state: str, progress: float = 0.0, message: str = "",
+                       warning: str = "") -> None:
+        self.record_state, self.record_progress = state, progress
+        self.record_message, self.record_warning = message, warning
+        self.bridge.recordChanged.emit()
+
+    def capture_sign(self) -> None:
+        """Start recording the hand for a new sign (tracking must be on)."""
+        if self.session is None:
+            self._record_update("failed", message="Start Fingerino first, so the "
+                                "camera can see your hand.")
+            return
+        self._recording = None
+        self._record_update("capturing")
+        self.session.start_recording(config.SIGN_RECORD_S)
+
+    def reset_recording(self) -> None:
+        self._recording = None
+        self._record_update("idle")
+
+    def _on_record(self, progress: float, result: object) -> None:
+        if self.record_state != "capturing":
+            return                       # cancelled meanwhile
+        if not isinstance(result, signs.Recording):
+            self._record_update("capturing", progress)
+            return
+        if result.error:
+            self._record_update("failed", message=result.error)
+            return
+        self._recording = result
+        warning = ""
+        if result.builtin:
+            warning = (f"This looks like {result.builtin}. Fingerino checks that "
+                       "first, so this sign may never be recognised. Try a "
+                       "different hand shape.")
+        else:
+            twin = signs.similar_sign(self.library, result.samples)
+            if twin:
+                warning = (f"This looks a lot like your sign \u201c{twin}\u201d. Fingerino "
+                           "won't be able to tell them apart, so neither may work. "
+                           "Try a more different shape.")
+        self._record_update("review", 1.0, warning=warning)
+
+    def save_sign(self, name: str) -> dict:
+        if self._recording is None:
+            return {"error": "Record the sign first."}
+        if not name.strip():
+            return {"error": "Give the sign a name."}
+        sign = self.library.add(name, self._recording.samples)
+        self.save_signs()
+        self.reset_recording()
+        self.bridge.signsChanged.emit()
+        return {"id": sign.id}
+
+    def save_signs(self) -> None:
+        signs.save(self.data_dir, self.library)
+
+    def _on_sign(self, sign_id: str) -> None:
+        self.bridge.signFired.emit(sign_id)
+
     def _on_state(self, paused: bool, hand_seen: bool) -> None:
         self.paused, self.hand_seen = paused, hand_seen
         self._refresh()
@@ -547,6 +699,9 @@ class Shell:
         self.session = None
         self.paused = self.hand_seen = False
         self.error = error or ""
+        if self.record_state == "capturing":
+            self._record_update("failed", message="Tracking stopped before the "
+                                "recording finished.")
         self.hud.hide()
         self._refresh()
         # Stopped by the Exit gesture, the HUD's X or an error: make sure

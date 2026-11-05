@@ -122,7 +122,15 @@ def run(monkeypatch, frames, prefs=None, *, drive=True, hook=None, registry=None
         if world.on_frame_hook:
             world.on_frame_hook(world, session)
 
-    world.error = session.run(on_frame, lambda paused, seen: None)
+    world.recordings = []
+    world.signs_fired = []
+
+    def on_record(progress, result):
+        if result is not None:
+            world.recordings.append(result)
+
+    world.error = session.run(on_frame, lambda paused, seen: None, on_record,
+                              world.signs_fired.append)
     return world
 
 

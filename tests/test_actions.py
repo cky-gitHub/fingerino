@@ -23,6 +23,7 @@ from fingerino.actions import Action, Registry, make_action, normalize_combo
     ("Control+Option+Return", "ctrl+alt+enter"),
     ("f5", "f5"),
     ("ctrl+/", "ctrl+/"),
+    ("Alt+Page Up", "alt+page_up"),            # what combo_label() shows
 ])
 def test_shortcuts_are_normalised(typed, stored):
     assert normalize_combo(typed) == stored

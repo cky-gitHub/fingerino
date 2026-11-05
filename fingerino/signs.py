@@ -21,8 +21,11 @@ import math
 import os
 import threading
 import uuid
+from dataclasses import dataclass
 
-from .sign_matcher import Matcher, Point, Sign
+from . import config
+from . import gesture_detector as gd
+from .sign_matcher import Landmarks, Matcher, Point, Sign, canonical, features
 
 FILENAME = "signs.json"
 SCHEMA = 1
@@ -130,6 +133,95 @@ class Library:
         with self._lock:
             self.signs = [s for s in self.signs if s.id != sign_id]
             self._changed()
+
+
+# ---------------------------------------------------------------------------
+# Recording
+# ---------------------------------------------------------------------------
+@dataclass
+class Recording:
+    samples: list[list[Point]]
+    frames: int                     # frames the recording lasted
+    seen: int                       # frames with a hand in view
+    builtin: str = ""               # a built-in the sign looks like, if any
+    error: str = ""                 # why it can't be used, if it can't
+
+
+class Recorder:
+    """Collects a sign's samples from the live hand for ``duration`` seconds.
+
+    Fed from the tracking thread, one frame at a time. Besides the samples,
+    it notes how often the hand looked like one of the built-in postures,
+    because a sign that is really a shaka or an open palm would never reach
+    the matcher -- the built-ins are checked first.
+    """
+
+    def __init__(self, start: float, duration: float, cursor: bool) -> None:
+        self.start = start
+        self.duration = duration
+        self.cursor = cursor
+        self.frames = 0
+        self.samples: list[list[Point]] = []
+        self._looks: dict[str, int] = {}
+
+    def progress(self, now: float) -> float:
+        return min(1.0, max(0.0, (now - self.start) / max(self.duration, 1e-6)))
+
+    def done(self, now: float) -> bool:
+        return now - self.start >= self.duration
+
+    def add(self, lms: Landmarks | None, handedness: str | None) -> None:
+        self.frames += 1
+        if lms is None:
+            return
+        self.samples.append(canonical(lms, handedness))
+        for name, test in self._builtin_tests():
+            if test(lms):
+                self._looks[name] = self._looks.get(name, 0) + 1
+
+    def _builtin_tests(self):
+        tests = [("the shaka", gd.is_shaka),
+                 ("an open palm, which swipes", gd.is_flat_hand)]
+        if self.cursor:
+            tests += [("pointing, which clicks while the cursor is on", gd.is_pointing),
+                      ("two fingers, which scroll while the cursor is on", gd.is_two_finger)]
+        return tests
+
+    def result(self) -> Recording:
+        seen = len(self.samples)
+        rec = Recording(self.samples, self.frames, seen)
+        if seen < config.SIGN_RECORD_MIN_SAMPLES or \
+                seen < config.SIGN_RECORD_MIN_SEEN * max(self.frames, 1):
+            rec.error = ("Fingerino couldn't see your hand for most of that. Keep it "
+                         "inside the camera's view and try again.")
+            return rec
+        for name, count in sorted(self._looks.items(), key=lambda kv: -kv[1]):
+            if count >= config.SIGN_SIMILAR_SHARE * seen:
+                rec.builtin = name
+                break
+        return rec
+
+
+def similar_sign(library: Library, samples: list[list[Point]],
+                 ignore: str = "") -> str:
+    """The name of an existing sign these samples are too close to, or "".
+
+    Two signs that close would make each other ambiguous, and the matcher
+    refuses ambiguous matches -- so neither would ever fire.
+    """
+    matcher = library.matcher
+    if not matcher or not samples:
+        return ""
+    counts: dict[str, int] = {}
+    loose = config.SIGN_MATCH_MAX_DIST * config.SIGN_MATCH_MARGIN
+    for sample in samples:
+        ranked = [r for r in matcher.nearest(features(sample)) if r[1] != ignore]
+        if ranked and ranked[0][0] <= loose:
+            counts[ranked[0][1]] = counts.get(ranked[0][1], 0) + 1
+    for sign_id, count in sorted(counts.items(), key=lambda kv: -kv[1]):
+        if count >= config.SIGN_SIMILAR_SHARE * len(samples):
+            return library.name(sign_id)
+    return ""
 
 
 def load(folder: str) -> Library:

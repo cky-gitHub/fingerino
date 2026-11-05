@@ -163,6 +163,14 @@ SIGN_MAX_ANGLE_DEG = 40.0           # how far the hand may be turned from a samp
 SIGN_HOLD_S = 0.6
 SIGN_COOLDOWN_S = 1.0               # min time between any two custom signs firing
 SIGN_RELEASE_GRACE_S = 0.15         # a dropped frame or two doesn't restart the hold
+# Recording a sign in Home: a countdown to get the hand up, then this long of
+# samples. The hand must be seen in at least SIGN_RECORD_MIN_SEEN of frames.
+SIGN_RECORD_COUNTDOWN_S = 3
+SIGN_RECORD_S = 3.0
+SIGN_RECORD_MIN_SEEN = 0.6
+SIGN_RECORD_MIN_SAMPLES = 15
+# Warn when this share of a recording looks like a built-in or another sign.
+SIGN_SIMILAR_SHARE = 0.3
 
 # ---------------------------------------------------------------------------
 # Hold gesture: both palms up and still -> pause / resume every other gesture

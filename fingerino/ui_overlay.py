@@ -423,7 +423,8 @@ class UIOverlay:
     def draw(self, frame, *, tracking, mode="none", mode_label="", cursor_px=None,
              zone_px, hands_px=None, exit_progress=0.0, dragging=False,
              drag_progress=0.0, debug=False, fps=0.0,
-             paused=False, hold_progress=0.0, sign_progress=0.0) -> np.ndarray:
+             paused=False, hold_progress=0.0, sign_progress=0.0,
+             record_progress=0.0) -> np.ndarray:
         # No control zone without the cursor: it maps the hand to the screen.
         if zone_px is not None:
             self._draw_zone(frame, zone_px, tracking)
@@ -450,6 +451,8 @@ class UIOverlay:
             self._draw_hold_prompt(
                 frame, "Hold to resume" if paused else "Hold to pause",
                 hold_progress)
+        elif record_progress > 0.0:
+            self._draw_hold_prompt(frame, "Recording your sign", record_progress)
         elif sign_progress > 0.0 and not paused and mode_label:
             # One of the user's signs filling up towards firing.
             self._draw_hold_prompt(frame, mode_label, sign_progress)

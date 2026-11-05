@@ -53,6 +53,7 @@ bound to a command runs exactly the command you typed, on your computer.
 | `fingerino-v1.ico` | The app icon, drawn on first run |
 | `settings.json` | Which gestures you switched off, whether the cursor is on, and whether you've seen the welcome |
 | `actions.json` | What you changed your signs to do (shortcuts, apps, links, commands) |
+| `signs.json` | Signs you recorded: a name and the positions of 21 hand joints per sample — never an image |
 | `selftest.txt` | Written by `--selftest`, for when you need to report a problem |
 | `crash.txt` | Written only if Fingerino crashes |
 
@@ -100,6 +101,14 @@ button is held.
 Rest with your fingers relaxed to stay in plain **Move** mode. The status pill
 (top-left) turns green when a hand is tracked; the pill beside it shows the
 current mode.
+
+**Your own signs.** On the Gestures page, *Record a sign* asks you to hold
+a hand shape in front of the camera for three seconds, then to name it and
+choose what it does: a keyboard shortcut, a media key, an app, a website or
+file, or a command. Hold the sign for about half a second to use it. Fingerino
+warns you if the shape looks like a built-in sign or one you already have,
+since it couldn't tell those apart. Any built-in sign can be given a
+different job the same way, with **Change**.
 
 **Hold** is the master switch, for when you want your hands back: raise both
 palms, keep them still for about a second, and everything stops driving the

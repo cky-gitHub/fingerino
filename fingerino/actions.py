@@ -113,7 +113,7 @@ def normalize_combo(text: str) -> str | None:
     Accepts pynput's ``<ctrl>`` spelling too. Needs exactly one non-modifier
     key, so a lone modifier or two letters at once are rejected.
     """
-    parts = [p.strip().strip("<>").lower() for p in text.split("+")]
+    parts = [p.strip().strip("<>").lower().replace(" ", "_") for p in text.split("+")]
     aliases = {"control": "ctrl", "option": "alt", "opt": "alt", "win": "cmd",
                "super": "cmd", "command": "cmd", "meta": "cmd", "return": "enter",
                "escape": "esc", "del": "delete", "pgup": "page_up",
