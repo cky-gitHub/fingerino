@@ -361,6 +361,43 @@ fingerino --debug
 The `--debug` flag overlays the raw skeleton, FPS, and current mode — handy for
 tuning thresholds.
 
+## Next steps
+
+Planned work, roughly in order:
+
+1. **Try the sign features with a real camera.** Record a sign, bind the shaka
+   to a link, check that nothing fires by accident, and check actions on macOS
+   (CI only runs Windows and Linux).
+2. **Design review against Apple's Human Interface Guidelines.** Install
+   [apple-design-skill](https://github.com/dickwu/apple-design-skill) for
+   Claude Code and run it on the Home window (`fingerino/qml/Home.qml` plus
+   screenshots), then fix what it finds on its own branch:
+
+   ```bash
+   npx skills add dickwu/apple-design-skill -a claude-code -g
+   # then, in Claude Code: /apple-design review the Home window
+   ```
+
+   The skill bundles Apple's own guideline text and has no licence file, so it
+   is installed per developer and not vendored into this repo.
+3. **Security checks.** Signs can now run commands and open apps, files and
+   links, so before the next release:
+   - run Claude Code's `/security-review` on the changes since v0.2.0;
+   - run `pip-audit` for known vulnerabilities in dependencies, and turn on
+     Dependabot alerts and secret scanning on GitHub;
+   - keep ruff's `S` (Bandit) rules passing, with every `noqa: S…` justified;
+   - review the action paths in `system_actions.py`: commands only run when
+     approved, and apps, files and links never go through a shell;
+   - decide how far to trust `actions.json` and `signs.json`: another program
+     running as you could edit them, so consider confirming commands again on
+     first run after the file changes.
+4. **Measure false triggers.** A dry run that logs matches without acting,
+   then tune the `SIGN_*` thresholds in `config.py`.
+5. **Always-on mode.** Lower the frame rate when the cursor is off, and
+   recover quietly when a video call takes the camera.
+6. **Sign packs.** Export and import signs; an imported command never runs
+   until you approve it.
+
 ## Building the installers
 
 ```bash
