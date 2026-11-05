@@ -117,6 +117,54 @@ def test_recording_does_not_fire_the_shaka(monkeypatch):
     assert "the shaka" in world.recordings[0].builtin
 
 
+def test_held_gestures_do_nothing_until_released(monkeypatch):
+    """Home holds gestures from the countdown to the end of the dialog."""
+    pytest.importorskip("cv2")
+    pytest.importorskip("pynput")
+    import sessionkit
+    from sessionkit import steady
+
+    from fingerino import settings
+
+    def hold_then_release(world, session):
+        if world.i == 0:
+            session.hold_gestures(True)
+        if world.i == 45:
+            session.hold_gestures(False)
+
+    # A shaka for 1 s while held, a gap, then another after release.
+    frames = steady([shaka()], 1.0) + steady([], 1.0) + steady([shaka()], 1.0)
+    world = sessionkit.run(monkeypatch, frames, hook=hold_then_release)
+    assert len(world.actions) == 1                 # only the second shaka
+
+    prefs = settings.Settings(cursor=True)
+    def hold(world, session):
+        if world.i == 0:
+            session.hold_gestures(True)
+            world.mark = len(world.cursor_calls)   # the hook runs after frame 0 is handled
+
+    held = sessionkit.run(monkeypatch, steady([point()], 1.0) + steady([peace()], 1.0),
+                          prefs, hook=hold)
+    acted = [c for c in held.cursor_calls[held.mark:]
+             if c[0] in ("click", "press", "scroll", "update")]
+    assert acted == []
+    free = sessionkit.run(monkeypatch, steady([point()], 1.0) + steady([peace()], 1.0), prefs)
+    assert [c for c in free.cursor_calls if c[0] in ("click", "scroll")]   # the test can see them
+
+
+def test_held_gestures_still_let_exit_and_release_through(monkeypatch):
+    pytest.importorskip("cv2")
+    pytest.importorskip("pynput")
+    import sessionkit
+    from landmarks import crossed
+    from sessionkit import steady
+
+    frames = steady(crossed(), config.EXIT_HOLD_S + 0.3) + steady([shaka()], 2.0)
+    world = sessionkit.run(monkeypatch, frames, hook=lambda w, s: s.hold_gestures(True))
+    assert world.i < len(frames) - 1                # stopped early: Exit worked
+    assert world.actions == []
+
+
 # ---------------------------------------------------------------------------
 # Home's flow, through the bridge
 # ---------------------------------------------------------------------------
@@ -141,14 +189,14 @@ class FakeSession:
         pass
 
 
-def record_through_home(a, make, seed=1):
+def record_through_home(a, make, seed=1, cursor=False):
     a.session = FakeSession()
     a.bridge.captureSign()
     assert a.bridge.property("recordState") == "capturing"
     assert a.session.recordings == [config.SIGN_RECORD_S]
     a._on_record(0.5, None)
     assert a.bridge.property("recordProgress") == 0.5
-    a._on_record(1.0, fed(make, seed=seed))
+    a._on_record(1.0, fed(make, seed=seed, cursor=cursor))
     a.session = None
 
 
@@ -168,7 +216,7 @@ def test_record_name_bind_and_delete(home):
     assert a.bridge.setAction(sign_id, "open", "https://open.spotify.com/x", "") == ""
     (card,) = a.bridge.property("customSigns")
     assert card == {"id": sign_id, "name": "Thumbs up", "enabled": True,
-                    "action": "Open spotify.com"}
+                    "action": "Open spotify.com", "warning": ""}
     # The matcher the session reads already knows it.
     assert a.library.matcher.match(thumbs_up(), "Right").sign_id == sign_id
 
@@ -236,3 +284,65 @@ def test_canonical_samples_are_what_gets_stored():
     rec = fed(thumbs_up, n=20)
     assert rec.samples[0] == canonical(recording(thumbs_up, random.Random(1), n=20)[0],
                                        "Right")
+
+
+# ---------------------------------------------------------------------------
+# The note on a saved sign's card
+# ---------------------------------------------------------------------------
+
+def test_a_saved_sign_that_looks_like_the_shaka_carries_a_note(home):
+    a, data = home
+    record_through_home(a, shaka)
+    sign_id = a.bridge.saveSign("Mine")["id"]
+    (card,) = a.bridge.property("customSigns")
+    assert "the shaka" in card["warning"]
+    assert signs.load(str(data)).get(sign_id).builtin.startswith("the shaka")
+
+
+def test_the_note_about_a_near_twin_goes_when_the_twin_does(home):
+    a, _ = home
+    record_through_home(a, thumbs_up, seed=1)
+    first = a.bridge.saveSign("Thumbs up")["id"]
+    record_through_home(a, thumbs_up, seed=2)
+    second = a.bridge.saveSign("Thumbs up again")["id"]
+    by_name = {c["name"]: c["warning"] for c in a.bridge.property("customSigns")}
+    assert "Thumbs up again" in by_name["Thumbs up"]
+    assert "“Thumbs up”" in by_name["Thumbs up again"]
+    a.bridge.setSignEnabled(first, False)            # off signs can't clash
+    by_name = {c["name"]: c["warning"] for c in a.bridge.property("customSigns")}
+    assert by_name == {"Thumbs up": "", "Thumbs up again": ""}
+    a.bridge.setSignEnabled(first, True)
+    a.bridge.deleteSign(second)
+    assert a.bridge.property("customSigns")[0]["warning"] == ""
+
+
+def test_a_pointing_note_only_applies_while_the_cursor_is_on(home):
+    a, _ = home
+    a.prefs.cursor = True
+    record_through_home(a, point, cursor=True)
+    a.bridge.saveSign("Pointer")
+    assert "pointing" in a.bridge.property("customSigns")[0]["warning"]
+    a.bridge.setCursorEnabled(False)
+    assert a.bridge.property("customSigns")[0]["warning"] == ""
+
+
+def test_the_builtin_note_survives_a_restart(tmp_path):
+    lib = signs.Library()
+    sign = lib.add("S", fed(shaka).samples, "the shaka")
+    signs.save(str(tmp_path), lib)
+    assert signs.load(str(tmp_path)).get(sign.id).builtin == "the shaka"
+    (tmp_path / signs.FILENAME).write_text(
+        json.dumps({"signs": [{"id": "x", "name": "X", "builtin": 5,
+                               "samples": [fed(thumbs_up).samples[0]]}]}), encoding="utf-8")
+    assert signs.load(str(tmp_path)).get("x").builtin == ""
+
+
+def test_holding_gestures_reaches_the_session_even_if_it_starts_later(home):
+    a, _ = home
+    a.bridge.holdGestures(True)                      # countdown begins, camera still opening
+    seen = []
+    a.session = type("S", (), {"hold_gestures": lambda self, on: seen.append(on),
+                               "stop": lambda self: None})()
+    a.bridge.holdGestures(False)
+    assert seen == [False] and a.gestures_held is False
+    a.session = None

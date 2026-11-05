@@ -20,12 +20,28 @@ code, and the cursor is an optional module that is off by default.
   4. Sign matcher (`fingerino/sign_matcher.py`), no UI.
   5. Recording signs in Home (`fingerino/signs.py`, `signs.json`): record,
      name, bind, rename, switch off, delete, "Recognised" feedback.
-- **Tests:** 255 pass with all dependencies, 163 in the dependency-free job.
-  Nothing has been tested with a real camera yet.
+- **Tests:** 268 pass, 1 skipped, with all dependencies (the dependency-free
+  job runs fewer). First real-camera check done on Windows, see below.
 
 ## What needs doing next
 
-1. **Camera check, then merge PR #8.** On a real machine:
+1. **Camera check, then merge PR #8.** Windows, 2026-11-05, done so far
+   (macOS still to do):
+   - PASS: cursor off by default on a clean profile, mouse never moves.
+   - PASS: shaka rebound to a Spotify link opens it, once, ~0.5 s hold.
+   - PASS: recorded sign (thumbs up) named, bound, fires, flashes "Recognised".
+   - PASS: shaka / duplicate warnings show. Two follow-ups from this, both
+     fixed on this branch: gestures now stay silent from the record
+     countdown to the end of the dialog (`Session.hold_gestures`), and a
+     saved sign that may never fire gets a quiet "!" with a hover note.
+   - Reported, not changed: swiping left/right to switch windows is hard to
+     trigger and the HUD arrows are weak. Needs a swipe-constants proposal.
+   - Not yet checked: Hold (both palms) and Exit (crossed hands), macOS.
+   - Gotcha: first run needs to reach storage.googleapis.com for the model;
+     a failed download is reported as a crash ("attach crash.txt"), which is
+     misleading. Worth a friendlier message.
+
+   The checklist, for reference:
    - With the cursor off (default), the mouse never moves.
    - Gestures page → Change on the shaka → *Open a website or file* → a
      Spotify link → Save. A shaka opens it.

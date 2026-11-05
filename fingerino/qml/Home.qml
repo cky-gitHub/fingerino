@@ -361,6 +361,7 @@ ApplicationWindow {
             if (!win.bridge.running)
                 win.bridge.start()
             saveError.text = ""
+            win.bridge.holdGestures(true)    // the hand is busy; nothing should fire
             win.bridge.cancelRecording()
             countdown = win.bridge.recordCountdown
             countdownTimer.start()
@@ -368,6 +369,7 @@ ApplicationWindow {
         onClosed: {
             countdownTimer.stop()
             countdown = 0
+            win.bridge.holdGestures(false)
             win.bridge.cancelRecording()
         }
 
@@ -797,6 +799,33 @@ ApplicationWindow {
                         }
                         RowLayout {
                             spacing: 8
+                            // A quiet "!" when this sign may never fire: it looks
+                            // like a built-in, or like another of your signs.
+                            Rectangle {
+                                visible: mine.modelData.warning !== ""
+                                implicitWidth: 18
+                                implicitHeight: 18
+                                radius: 9
+                                color: "transparent"
+                                border.width: 1
+                                border.color: "#d29922"
+                                opacity: 0.85
+                                Accessible.role: Accessible.StaticText
+                                Accessible.name: mine.modelData.warning
+                                Label {
+                                    anchors.centerIn: parent
+                                    text: "!"
+                                    font.pixelSize: 11
+                                    font.bold: true
+                                    color: "#d29922"
+                                }
+                                HoverHandler { id: warnHover }
+                                ToolTip {
+                                    visible: warnHover.hovered
+                                    delay: 250
+                                    text: mine.modelData.warning
+                                }
+                            }
                             Button {
                                 text: "Change"
                                 Accessible.name: "Change what " + mine.modelData.name + " does"

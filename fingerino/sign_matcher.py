@@ -103,6 +103,9 @@ class Sign:
     name: str
     samples: list[list[Point]]            # canonical points, see canonical()
     enabled: bool = True
+    # A built-in the sign looked like when recorded ("" if none); kept so the
+    # card can say the sign may never fire. See signs.Library.warning.
+    builtin: str = ""
     _features: list[Features] = field(default_factory=list, repr=False, compare=False)
 
     def feature_list(self) -> list[Features]:

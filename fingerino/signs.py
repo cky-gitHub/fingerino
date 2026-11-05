@@ -33,6 +33,8 @@ SCHEMA = 1
 # matching, which compares a live hand with every sample of every sign.
 MAX_SAMPLES = 40
 NAME_MAX = 40
+# Recorder's wording for built-ins that only exist while the cursor is on.
+CURSOR_NOTE = "while the cursor is on"
 
 
 def thin(samples: list[list[Point]], limit: int = MAX_SAMPLES) -> list[list[Point]]:
@@ -59,6 +61,7 @@ def _valid_sample(sample: object) -> list[Point] | None:
 def to_json(signs: list[Sign]) -> dict:
     return {"schema": SCHEMA, "signs": [
         {"id": s.id, "name": s.name, "enabled": s.enabled,
+         **({"builtin": s.builtin} if s.builtin else {}),
          "samples": [[[round(v, 4) for v in p] for p in sample] for sample in s.samples]}
         for s in signs]}
 
@@ -81,8 +84,10 @@ def from_json(data: object) -> list[Sign]:
         if not valid:
             continue
         seen.add(sign_id)
+        builtin = item.get("builtin")
         out.append(Sign(sign_id, name.strip()[:NAME_MAX], thin(valid),
-                        enabled=item.get("enabled") is not False))
+                        enabled=item.get("enabled") is not False,
+                        builtin=builtin[:80] if isinstance(builtin, str) else ""))
     return out
 
 
@@ -108,13 +113,34 @@ class Library:
     def names(self) -> dict[str, str]:
         return {s.id: s.name for s in self.signs}
 
-    def add(self, name: str, samples: list[list[Point]]) -> Sign:
+    def add(self, name: str, samples: list[list[Point]], builtin: str = "") -> Sign:
         sign = Sign(f"sign-{uuid.uuid4().hex[:10]}", name.strip()[:NAME_MAX] or "My sign",
-                    thin(samples))
+                    thin(samples), builtin=builtin)
         with self._lock:
             self.signs = [*self.signs, sign]
             self._changed()
         return sign
+
+    def warning(self, sign_id: str, cursor: bool) -> str:
+        """A short note for the sign's card when it may never fire, or "".
+
+        Either it looked like a built-in when recorded (checked first, so it
+        would never reach the matcher) or it is close to another sign (the
+        matcher refuses ambiguous matches). The second is worked out now, so
+        it goes away when the other sign is deleted or switched off. Signs
+        that are switched off cannot clash, so they carry no note.
+        """
+        sign = self.get(sign_id)
+        if sign is None or not sign.enabled:
+            return ""
+        if sign.builtin and (cursor or CURSOR_NOTE not in sign.builtin):
+            return (f"Looks like {sign.builtin}. Fingerino checks that first, "
+                    "so this sign may not be recognised.")
+        twin = similar_sign(self, sign.samples, ignore=sign_id)
+        if twin:
+            return (f"Looks a lot like your sign “{twin}”. Fingerino may "
+                    "not be able to tell them apart.")
+        return ""
 
     def rename(self, sign_id: str, name: str) -> None:
         name = name.strip()[:NAME_MAX]
@@ -185,8 +211,8 @@ class Recorder:
         tests = [("the shaka", gd.is_shaka),
                  ("an open palm, which swipes", gd.is_flat_hand)]
         if self.cursor:
-            tests += [("pointing, which clicks while the cursor is on", gd.is_pointing),
-                      ("two fingers, which scroll while the cursor is on", gd.is_two_finger)]
+            tests += [(f"pointing, which clicks {CURSOR_NOTE}", gd.is_pointing),
+                      (f"two fingers, which scroll {CURSOR_NOTE}", gd.is_two_finger)]
         return tests
 
     def result(self) -> Recording:

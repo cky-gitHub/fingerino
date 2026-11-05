@@ -118,6 +118,10 @@ class Session:
         self._stop = threading.Event()
         # Seconds to record for, set from Home; picked up by the next frame.
         self._record_request: float | None = None
+        # Set by Home from the countdown to the end of the "record a sign"
+        # dialog: gestures do nothing meanwhile, since the hand is busy
+        # showing the new sign and must not fire the old ones.
+        self._held = threading.Event()
 
     # -- called from other threads -----------------------------------------
 
@@ -128,6 +132,14 @@ class Session:
 
     def stop(self) -> None:
         self._stop.set()
+
+    def hold_gestures(self, on: bool) -> None:
+        """Stop (or resume) gestures acting. Tracking, the HUD and Exit
+        carry on, and a button already held down is still let go."""
+        if on:
+            self._held.set()
+        else:
+            self._held.clear()
 
     def start_recording(self, seconds: float) -> None:
         """Record a new sign's samples, starting on the next frame. The
@@ -232,12 +244,18 @@ class Session:
                     engine.matcher = self.library.matcher
                     engine.sign_names = self.library.names()
                 out = engine.update(hands, now, result.handedness if result else None)
+                # Nothing acts while Home is recording a sign, from the
+                # countdown to the end of the dialog -- including the frame
+                # a request is still waiting to be picked up. Exit and
+                # button release are exempt: see below.
+                quiet = (recorder is not None or self._held.is_set()
+                         or self._record_request is not None)
 
                 # The master switch. Turning the pause *off* is never gated on
                 # the row's own toggle -- switching Hold off while paused would
                 # otherwise leave no gesture able to give control back.
-                if out.hold_toggle and (self.paused
-                                        or self.prefs.gestures.get("both_flat", True)):
+                if out.hold_toggle and not quiet and (
+                        self.paused or self.prefs.gestures.get("both_flat", True)):
                     _toggle_pause()
                 if self._pause_request.is_set():
                     self._pause_request.clear()
@@ -255,7 +273,8 @@ class Session:
                     # off the thing being aimed at. Tracking resumes the moment
                     # the point latches into a drag.
                     committing = config.FREEZE_WHILE_AIMING and out.aiming
-                    if out.mode == "move" and drive and _live("thumb") and not committing:
+                    if (out.mode == "move" and drive and _live("thumb")
+                            and not committing and not quiet):
                         cursor.update(tip[0], tip[1], now)
 
                     # Show the committed point rather than the hand's live
@@ -265,14 +284,15 @@ class Session:
                         aimed = _anchored_frame_px(cursor, out.aim_anchor_t, w, h)
                         if aimed is not None:
                             cursor_px = aimed
-                    elif out.mode == "scroll" and drive and _live("two_finger"):
+                    elif (out.mode == "scroll" and drive and not quiet
+                          and _live("two_finger")):
                         cursor.scroll(out.scroll_steps)
 
                     # Signs -> actions. A sign's on/off switch in Home is
                     # keyed by the sign's own id. Nothing fires while a new
                     # sign is being recorded: the hand is busy showing it.
                     fired = registry.resolve(out, _live)
-                    if recorder is None:
+                    if not quiet:
                         for action in fired:
                             failed = perform_action(action) if drive else None
                             overlay.toast(failed or action.toast)
@@ -287,13 +307,13 @@ class Session:
                 # pending click and a live drag outlive the hand by the trigger's
                 # grace window, so their edges have to get through even with
                 # nothing tracked.
-                if out.click and _live("point"):
+                if out.click and not quiet and _live("point"):
                     if drive:
                         cursor.click(out.anchor_t)
                     flash_px = _anchored_frame_px(cursor, out.anchor_t, w, h) or cursor_px
                     if flash_px is not None:
                         overlay.flash_click(flash_px)
-                if out.press and drive and _live("point_hold"):
+                if out.press and drive and not quiet and _live("point_hold"):
                     cursor.press(out.anchor_t)
                 # Not gated by _live("point_hold"): release() is a safe no-op if
                 # the button isn't held, but if Drag gets disabled -- or the

@@ -283,14 +283,17 @@ class Bridge(QObject):
         self._shell.prefs.cursor = on
         self._shell.save()
         self.settingsChanged.emit()
+        self.signsChanged.emit()          # a sign's "looks like pointing" note
 
     # -- the user's own signs -----------------------------------------------------
 
     def _custom_signs(self) -> list:
         reg = self._shell.registry
+        lib, cursor = self._shell.library, self._shell.prefs.cursor
         return [{"id": s.id, "name": s.name, "enabled": s.enabled,
-                 "action": actions.describe(reg.action_for(s.id))["label"]}
-                for s in self._shell.library.signs]
+                 "action": actions.describe(reg.action_for(s.id))["label"],
+                 "warning": lib.warning(s.id, cursor)}
+                for s in lib.signs]
 
     def _record_state(self) -> str:
         return self._shell.record_state
@@ -314,6 +317,11 @@ class Bridge(QObject):
     @Slot()
     def captureSign(self) -> None:
         self._shell.capture_sign()
+
+    @Slot(bool)
+    def holdGestures(self, on: bool) -> None:
+        """True from the countdown until the record dialog closes."""
+        self._shell.hold_gestures(on)
 
     @Slot()
     def cancelRecording(self) -> None:
@@ -465,6 +473,7 @@ class Shell:
         self.record_progress = 0.0
         self.record_message = ""
         self.record_warning = ""
+        self.gestures_held = False          # see hold_gestures()
         self._recording: signs.Recording | None = None
         self.options = options or Options()
         self._on_crash = on_crash
@@ -587,6 +596,7 @@ class Shell:
         # mid-session applies on the next frame.
         session = Session(self.options, self.prefs, self.registry, self.library)
         self.session = session
+        session.hold_gestures(self.gestures_held)
         self.paused = False
         self.hand_seen = False
         self.error = ""
@@ -645,6 +655,13 @@ class Shell:
         self._record_update("capturing")
         self.session.start_recording(config.SIGN_RECORD_S)
 
+    def hold_gestures(self, on: bool) -> None:
+        """Remembered here as well as passed on, so a session that starts
+        during the countdown (the camera is still opening) picks it up."""
+        self.gestures_held = on
+        if self.session is not None:
+            self.session.hold_gestures(on)
+
     def reset_recording(self) -> None:
         self._recording = None
         self._record_update("idle")
@@ -677,7 +694,7 @@ class Shell:
             return {"error": "Record the sign first."}
         if not name.strip():
             return {"error": "Give the sign a name."}
-        sign = self.library.add(name, self._recording.samples)
+        sign = self.library.add(name, self._recording.samples, self._recording.builtin)
         self.save_signs()
         self.reset_recording()
         self.bridge.signsChanged.emit()
