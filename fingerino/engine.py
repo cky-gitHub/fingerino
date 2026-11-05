@@ -21,7 +21,7 @@ from dataclasses import dataclass
 import cv2
 import numpy as np
 
-from . import config, macui, settings, system_actions
+from . import config, macui, settings, signs, system_actions
 from .actions import Action, Registry
 from .cursor_controller import CursorController
 from .gesture_detector import GestureEngine, cursor_point
@@ -103,10 +103,13 @@ class Session:
     """Track until stopped. Single use: start a new one to track again."""
 
     def __init__(self, options: Options, prefs: settings.Settings,
-                 registry: Registry | None = None) -> None:
+                 registry: Registry | None = None,
+                 library: signs.Library | None = None) -> None:
         self.options = options
-        # Shared with Home too: rebinding a sign applies on the next frame.
+        # Shared with Home too: rebinding a sign, or recording or deleting
+        # one, applies on the next frame.
         self.registry = registry or Registry()
+        self.library = library or signs.Library()
         # Shared with the Home window, which flips fields from the UI
         # thread. Only ever read here, one value at a time.
         self.prefs = prefs
@@ -212,7 +215,10 @@ class Session:
                 # ordinary path a few frames later.
                 cursor_on = self.prefs.cursor
                 engine.cursor = cursor_on
-                out = engine.update(hands, now)
+                if engine.matcher is not self.library.matcher:
+                    engine.matcher = self.library.matcher
+                    engine.sign_names = self.library.names()
+                out = engine.update(hands, now, result.handedness if result else None)
 
                 # The master switch. Turning the pause *off* is never gated on
                 # the row's own toggle -- switching Hold off while paused would
@@ -295,6 +301,7 @@ class Session:
                     fps=fps,
                     paused=self.paused,
                     hold_progress=out.hold_progress,
+                    sign_progress=out.sign_progress,
                 )
                 on_frame(cv2.resize(frame, (out_w, out_h), interpolation=cv2.INTER_AREA))
 

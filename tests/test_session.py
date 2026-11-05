@@ -104,3 +104,24 @@ def test_a_failing_action_is_reported_not_fatal(monkeypatch):
     monkeypatch.setattr(engine.system_actions, "perform", boom)
     assert engine.perform_action(make_action("open_app", "/nope/Spotify.app")) \
         == "Couldn't open Spotify"
+
+
+def test_a_custom_sign_runs_its_action_through_the_session(monkeypatch):
+    import random
+
+    from landmarks import recording, thumbs_up
+
+    from fingerino import signs
+    from fingerino.actions import Registry, make_action
+    from fingerino.sign_matcher import canonical
+
+    library = signs.Library()
+    rng = random.Random(1)
+    sign = library.add("Thumbs up", [canonical(h) for h in recording(thumbs_up, rng)])
+    registry = Registry()
+    mute = make_action("media", "mute")
+    registry.bind(sign.id, mute)
+    world = sessionkit.run(monkeypatch, steady([fist()], 0.2) + steady([thumbs_up()], 1.5),
+                           registry=registry, library=library)
+    assert world.actions == [mute.id]
+    assert "Mute" in world.toasts

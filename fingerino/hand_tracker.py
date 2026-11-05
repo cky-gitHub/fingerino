@@ -16,7 +16,7 @@ import os
 import sys
 import threading
 import urllib.request
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 import mediapipe as mp
 from mediapipe.tasks import python as mp_python
@@ -48,6 +48,8 @@ class HandResult:
 
     hands: list[list[tuple[float, float, float]]]  # per hand: 21 (x,y,z), 0..1
     timestamp_ms: int
+    # "Left" / "Right" per hand, in the same order, as MediaPipe labels them.
+    handedness: list[str] = field(default_factory=list)
 
 
 def _cache_dir() -> str:
@@ -247,8 +249,11 @@ class HandTracker:
             hands = [
                 [(lm.x, lm.y, lm.z) for lm in hand] for hand in result.hand_landmarks
             ]
+            handedness = [h[0].category_name if h else ""
+                          for h in (result.handedness or [])]
             with self._lock:
-                self._latest = HandResult(hands=hands, timestamp_ms=timestamp_ms)
+                self._latest = HandResult(hands=hands, timestamp_ms=timestamp_ms,
+                                          handedness=handedness)
         else:
             with self._lock:
                 self._latest = None

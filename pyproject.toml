@@ -106,7 +106,8 @@ ignore = [
 "packaging/build.py" = ["E402"]
 # assert is how a test asserts; importorskip has to run before the import it
 # guards, and reaching for a private helper is the point of a unit test.
-"tests/*" = ["S101", "E402", "SLF001"]
+# Seeded random makes the synthetic hands reproducible, not secure.
+"tests/*" = ["S101", "E402", "SLF001", "S311"]
 
 [tool.mypy]
 python_version = "3.10"

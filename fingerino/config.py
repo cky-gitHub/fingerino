@@ -150,6 +150,21 @@ AI_CHAT_MODIFIER = "alt"            # alt | ctrl | cmd | shift
 AI_CHAT_KEY = "space"              # e.g. "space", or a letter like "j"
 
 # ---------------------------------------------------------------------------
+# Your own signs (sign_matcher.py)
+# ---------------------------------------------------------------------------
+# Distances are in hand sizes (wrist to knuckles = 1), as an RMS over all 21
+# landmarks. Bending one finger fully moves the match by roughly 0.2; tracker
+# jitter on a still hand is a few hundredths.
+SIGN_MATCH_MAX_DIST = 0.12          # farther than this from every sample: no sign
+SIGN_MATCH_MARGIN = 1.3             # the runner-up sign must be this much farther
+SIGN_MAX_ANGLE_DEG = 40.0           # how far the hand may be turned from a sample
+# Longer than the shaka's 0.25 s: hands are in view all day, and a custom sign
+# is matched less strictly than a built-in posture.
+SIGN_HOLD_S = 0.6
+SIGN_COOLDOWN_S = 1.0               # min time between any two custom signs firing
+SIGN_RELEASE_GRACE_S = 0.15         # a dropped frame or two doesn't restart the hold
+
+# ---------------------------------------------------------------------------
 # Hold gesture: both palms up and still -> pause / resume every other gesture
 # ---------------------------------------------------------------------------
 # One flat hand swipes; two of them, held still, are the master switch. While

@@ -34,6 +34,7 @@ from dataclasses import dataclass, field
 from typing import NamedTuple
 
 from . import config
+from .sign_matcher import Matcher, SignHold
 
 Landmark = tuple[float, float, float]
 Landmarks = list[Landmark]
@@ -324,7 +325,7 @@ BUILTIN_SIGNS = (SIGN_SHAKA, SIGN_FLAT_DOWN, SIGN_FLAT_UP, SIGN_FLAT_LEFT, SIGN_
 # ---------------------------------------------------------------------------
 @dataclass
 class GestureOutput:
-    mode: str = "none"          # none | idle | move | scroll | flat | shaka | hold | exit
+    mode: str = "none"  # none | idle | move | scroll | flat | shaka | sign | hold | exit
     mode_label: str = ""
     click: bool = False         # a short point — a discrete left click
     press: bool = False         # left button just went down (drag starting)
@@ -335,8 +336,10 @@ class GestureOutput:
     # Signs completed on this frame, by id (see BUILTIN_SIGNS). What each one
     # does is up to actions.Registry, not the detector.
     signs: list[str] = field(default_factory=list)
-    # A sign being held towards firing (the shaka), so the HUD can name it.
+    # A sign being held towards firing (the shaka, or one of the user's), so
+    # the HUD can name it, and how far a user's sign has come (0..1).
     pending_sign: str | None = None
+    sign_progress: float = 0.0
     hold_toggle: bool = False   # both palms held still — pause / resume
     hold_progress: float = 0.0  # 0..1 while both palms are being held
     exit: bool = False
@@ -357,6 +360,13 @@ class GestureEngine:
 
     def __init__(self, cursor: bool = True) -> None:
         self.cursor = cursor
+        # The user's signs (sign_matcher.Matcher) and their names, swapped in
+        # whole by the session whenever they change.
+        self.matcher: Matcher | None = None
+        self.sign_names: dict[str, str] = {}
+        self._sign_hold = SignHold()
+        self._sign_seen: str | None = None
+        self._handedness: str | None = None
         self._drag = DragTrigger()
         self._scroll_prev_y: float | None = None
         self._scroll_acc = 0.0
@@ -498,9 +508,22 @@ class GestureEngine:
         return direction
 
     # -- main entry ----------------------------------------------------------
-    def update(self, hands: list[Landmarks], now: float) -> GestureOutput:
+    def update(self, hands: list[Landmarks], now: float,
+               handedness: list[str] | None = None) -> GestureOutput:
+        """Classify one frame. ``handedness`` ("Left"/"Right" per hand, as
+        MediaPipe reports it) only helps the user's signs work with either
+        hand; everything else ignores it."""
         out = GestureOutput()
+        self._sign_seen = None
+        self._handedness = handedness[0] if handedness else None
         pointing = self._classify(hands, now, out)
+
+        fired, pending, progress = self._sign_hold.update(self._sign_seen, now)
+        if fired is not None:
+            out.signs.append(fired)
+        if pending is not None:
+            out.pending_sign = pending
+            out.sign_progress = progress
 
         # The button is driven from exactly one place, so every way of leaving
         # the posture — relaxing the finger, switching to another gesture,
@@ -599,6 +622,17 @@ class GestureEngine:
             return False
 
         self._reset_shaka()
+
+        # The user's own signs. After every built-in, so none of those can be
+        # taken over by a recorded sign; and with the cursor on, pointing stays
+        # a click rather than being read as a sign.
+        if self.matcher and not (self.cursor and is_pointing(primary)):
+            match = self.matcher.match(primary, self._handedness)
+            if match is not None:
+                self._sign_seen = match.sign_id
+                out.mode = "sign"
+                out.mode_label = self.sign_names.get(match.sign_id, "Sign")
+                return False
 
         # Default: move, and point to click / hold the point to drag -- or,
         # with the cursor off, nothing at all.

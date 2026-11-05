@@ -219,6 +219,8 @@ tracking start as soon as Fingerino opens, turn that on in **Settings**.
 | `cursor_controller.py` | Thumb → screen mapping, One Euro smoothing, `pynput` move + button + scroll. |
 | `gesture_detector.py` | `GestureEngine`: posture → mode + click / drag / scroll / hold / exit, and named signs (shaka, swipes). |
 | `actions.py` | The registry that maps each sign to its action, and `actions.json`. Recognising a sign and what it does are kept apart. |
+| `sign_matcher.py` | Recognises your own signs: normalised landmarks, nearest neighbour over recorded samples, orientation kept, weak matches rejected. |
+| `signs.py` | Your recorded signs and `signs.json`. |
 | `system_actions.py` | Carries actions out: built-in shortcuts, your own shortcuts, media keys, opening apps / links / files, commands. |
 | `ui_overlay.py` | All HUD drawing (flat, professional theme). |
 | `engine.py` | One tracking session: camera in, cursor and shortcuts out, on a background thread. |
