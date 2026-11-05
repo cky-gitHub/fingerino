@@ -20,6 +20,8 @@ ApplicationWindow {
     // Segoe Fluent Icons ships with Windows 11; MDL2 Assets is the Windows 10
     // fallback with the same code points. Elsewhere the glyphs are left out.
     readonly property string iconFont: "Segoe Fluent Icons, Segoe MDL2 Assets"
+    // "This may not work as you expect": the sign badge and recording warnings.
+    readonly property color warnColor: "#f2cc40"
 
     width: 980
     height: 660
@@ -107,6 +109,9 @@ ApplicationWindow {
                 id: slot
                 implicitWidth: childrenRect.width
                 implicitHeight: childrenRect.height
+                // Never squeezed below its controls: the text column wraps
+                // instead, or the buttons slide over it and off the card.
+                Layout.minimumWidth: implicitWidth
             }
         }
     }
@@ -434,7 +439,7 @@ ApplicationWindow {
                 Layout.fillWidth: true
                 wrapMode: Text.WordWrap
                 font.pixelSize: 12
-                color: "#d29922"
+                color: win.warnColor
                 text: win.bridge.recordWarning
             }
             TextField {
@@ -808,7 +813,7 @@ ApplicationWindow {
                                 radius: 9
                                 color: "transparent"
                                 border.width: 1.5
-                                border.color: "#d29922"
+                                border.color: win.warnColor
                                 Accessible.role: Accessible.StaticText
                                 Accessible.name: mine.modelData.warning
                                 Label {
@@ -816,7 +821,7 @@ ApplicationWindow {
                                     text: "!"
                                     font.pixelSize: 11
                                     font.bold: true
-                                    color: "#d29922"
+                                    color: win.warnColor
                                 }
                                 HoverHandler { id: warnHover }
                                 ToolTip {
@@ -831,15 +836,30 @@ ApplicationWindow {
                                 onClicked: actionEditor.edit(mine.modelData.id,
                                     "When you make \u201c" + mine.modelData.name + "\u201d")
                             }
+                            // Rename and Delete live in a menu, so the row stays
+                            // short enough to fit a narrow window.
                             Button {
-                                text: "Rename"
-                                Accessible.name: "Rename " + mine.modelData.name
-                                onClicked: renameDialog.ask(mine.modelData.id, mine.modelData.name)
-                            }
-                            Button {
-                                text: "Delete"
-                                Accessible.name: "Delete " + mine.modelData.name
-                                onClicked: deleteDialog.ask(mine.modelData.id, mine.modelData.name)
+                                id: moreButton
+                                text: "⋯"
+                                Layout.preferredWidth: implicitHeight
+                                Accessible.name: "More for " + mine.modelData.name
+                                ToolTip.visible: hovered
+                                ToolTip.delay: 400
+                                ToolTip.text: "Rename or delete"
+                                onClicked: moreMenu.popup(moreButton, 0, moreButton.height)
+                                Menu {
+                                    id: moreMenu
+                                    MenuItem {
+                                        text: "Rename"
+                                        onTriggered: renameDialog.ask(mine.modelData.id,
+                                                                      mine.modelData.name)
+                                    }
+                                    MenuItem {
+                                        text: "Delete"
+                                        onTriggered: deleteDialog.ask(mine.modelData.id,
+                                                                      mine.modelData.name)
+                                    }
+                                }
                             }
                             Switch {
                                 checked: mine.modelData.enabled
@@ -874,6 +894,16 @@ ApplicationWindow {
                         checked: win.bridge.startOnOpen
                         onToggled: win.bridge.setStartOnOpen(checked)
                         Accessible.name: "Start tracking when Fingerino opens"
+                    }
+                }
+                Card {
+                    title: "Show the hand skeleton"
+                    description: "Draws the joints Fingerino tracks over your hand in the "
+                        + "preview. Always shown while you record a sign."
+                    Switch {
+                        checked: win.bridge.showSkeleton
+                        onToggled: win.bridge.setShowSkeleton(checked)
+                        Accessible.name: "Show the hand skeleton"
                     }
                 }
                 Card {

@@ -20,7 +20,7 @@ code, and the cursor is an optional module that is off by default.
   4. Sign matcher (`fingerino/sign_matcher.py`), no UI.
   5. Recording signs in Home (`fingerino/signs.py`, `signs.json`): record,
      name, bind, rename, switch off, delete, "Recognised" feedback.
-- **Tests:** 280 pass, 1 skipped, with all dependencies (the dependency-free
+- **Tests:** 283 pass, 1 skipped, with all dependencies (the dependency-free
   job runs fewer). First real-camera check done on Windows, see below.
 
 ## What needs doing next
@@ -35,6 +35,14 @@ code, and the cursor is an optional module that is off by default.
      countdown to the end of the dialog (`Session.hold_gestures`), and a
      saved sign that may never fire gets a quiet "!" with a hover note.
    - HUD arrows for swipes are weak (reported, not changed).
+   - Sign cards overflowed in a narrow window, hiding Delete and the switch
+     (the "UI a bit messed up" report). Fixed: the card's control slot keeps
+     its width, and Rename/Delete moved into a "⋯" menu. Warning yellow is
+     now one shared colour (`warnColor` in Home.qml).
+   - New setting: "Show the hand skeleton" (settings.json `skeleton`, off by
+     default), always drawn while recording a sign.
+   - The Exit row's picture still shows crossed hands
+     (assets/tutorial-gestures/09-exit.png); needs a crossed-fingers drawing.
    - Exit changed from two crossed hands to **crossed index and middle
      fingers** (`is_crossed_fingers`, `EXIT_CROSS_RATIO` in config.py): the
      crossed hands were not recognised on the real camera, most likely

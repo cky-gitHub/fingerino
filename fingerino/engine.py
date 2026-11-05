@@ -359,6 +359,9 @@ class Session:
                     dragging=out.dragging,
                     drag_progress=out.drag_progress,
                     debug=opts.debug,
+                    # Read every frame, like the cursor switch. Always on
+                    # while Home records a sign, so the user sees what's seen.
+                    skeleton=opts.debug or self.prefs.skeleton or quiet,
                     fps=fps,
                     paused=self.paused,
                     hold_progress=out.hold_progress,

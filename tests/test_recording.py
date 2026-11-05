@@ -346,3 +346,48 @@ def test_holding_gestures_reaches_the_session_even_if_it_starts_later(home):
     a.bridge.holdGestures(False)
     assert seen == [False] and a.gestures_held is False
     a.session = None
+
+
+# ---------------------------------------------------------------------------
+# The hand skeleton on the HUD
+# ---------------------------------------------------------------------------
+
+def _skeleton_per_frame(monkeypatch, frames, prefs=None, hook=None):
+    import sessionkit
+
+    from fingerino import engine
+    drawn = []
+    original = engine.UIOverlay.draw
+
+    def draw(self, frame, **kw):
+        drawn.append(kw.get("skeleton"))
+        return original(self, frame, **kw)
+
+    monkeypatch.setattr(engine.UIOverlay, "draw", draw)
+    sessionkit.run(monkeypatch, frames, prefs, hook=hook)
+    return drawn
+
+
+def test_skeleton_follows_the_setting_and_is_always_on_while_recording(monkeypatch):
+    pytest.importorskip("cv2")
+    pytest.importorskip("pynput")
+    from sessionkit import steady
+
+    from fingerino import settings
+    frames = steady([thumbs_up()], 1.0)
+    assert not any(_skeleton_per_frame(monkeypatch, frames))
+    assert all(_skeleton_per_frame(monkeypatch, frames, settings.Settings(skeleton=True)))
+
+    def record(world, session):
+        if world.i == 0:
+            session.start_recording(0.5)
+    drawn = _skeleton_per_frame(monkeypatch, frames, hook=record)
+    assert all(drawn[1:12]) and not any(drawn[20:])   # on while recording, then off
+
+
+def test_the_skeleton_switch_in_home(home):
+    a, data = home
+    assert a.bridge.property("showSkeleton") is False
+    a.bridge.setShowSkeleton(True)
+    assert a.prefs.skeleton is True
+    assert json.loads((data / "settings.json").read_text(encoding="utf-8"))["skeleton"] is True

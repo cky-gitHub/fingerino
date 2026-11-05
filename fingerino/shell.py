@@ -205,9 +205,13 @@ class Bridge(QObject):
     def _cursor(self) -> bool:
         return self._shell.prefs.cursor
 
+    def _skeleton(self) -> bool:
+        return self._shell.prefs.skeleton
+
     onboarded = Property(bool, _onboarded, notify=settingsChanged)
     cursorEnabled = Property(bool, _cursor, notify=settingsChanged)
     startOnOpen = Property(bool, _start_on_open, notify=settingsChanged)
+    showSkeleton = Property(bool, _skeleton, notify=settingsChanged)
 
     # -- constants --------------------------------------------------------------
 
@@ -408,6 +412,12 @@ class Bridge(QObject):
     @Slot(str, result=str)
     def comboLabel(self, combo: str) -> str:
         return actions.combo_label(combo) if combo else ""
+
+    @Slot(bool)
+    def setShowSkeleton(self, on: bool) -> None:
+        self._shell.prefs.skeleton = on
+        self._shell.save()
+        self.settingsChanged.emit()
 
     @Slot(bool)
     def setStartOnOpen(self, on: bool) -> None:

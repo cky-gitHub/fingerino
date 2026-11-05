@@ -66,3 +66,11 @@ def test_unwritable_folder_reports_failure(tmp_path):
     blocker.write_text("", encoding="utf-8")
     # A folder path that runs through a regular file can never be created.
     assert settings.save(str(blocker / "sub"), settings.Settings()) is False
+
+
+def test_hand_skeleton_is_off_by_default_and_round_trips(tmp_path):
+    from fingerino import settings as st
+    assert st.Settings().skeleton is False
+    on = st.Settings(skeleton=True)
+    assert st.Settings.from_json(on.to_json()).skeleton is True
+    assert st.Settings.from_json({"skeleton": "yes"}).skeleton is False   # wrong type

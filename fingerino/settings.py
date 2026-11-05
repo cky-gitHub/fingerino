@@ -46,11 +46,16 @@ class Settings:
     # Fingerino is a sign tool first -- and off for upgraders too, since a
     # v0.2 file has no such field. Turned on from the Gestures page.
     cursor: bool = False
+    # The hand skeleton (21 joints and the lines between them) on the HUD.
+    # Off by default; always drawn while a new sign is being recorded, so
+    # the user can see what Fingerino sees. --debug also turns it on.
+    skeleton: bool = False
 
     def to_json(self) -> dict:
         return {"schema": SCHEMA, "gestures": dict(self.gestures),
                 "onboarded": self.onboarded, "start_on_open": self.start_on_open,
-                "hotkey": self.hotkey, "cursor": self.cursor}
+                "hotkey": self.hotkey, "cursor": self.cursor,
+                "skeleton": self.skeleton}
 
     @classmethod
     def from_json(cls, data: object) -> Settings:
@@ -75,6 +80,8 @@ class Settings:
             s.start_on_open = data["start_on_open"]
         if isinstance(data.get("cursor"), bool):
             s.cursor = data["cursor"]
+        if isinstance(data.get("skeleton"), bool):
+            s.skeleton = data["skeleton"]
         if isinstance(data.get("hotkey"), str) and data["hotkey"].strip():
             s.hotkey = data["hotkey"]
         return s

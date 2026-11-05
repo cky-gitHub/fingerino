@@ -3,7 +3,8 @@
 Neutral greys throughout, hairline strokes, state carried by brightness
 rather than hue; the status dot is the only thing that stays coloured,
 because it reports a live condition. Text is rendered with PIL for crisp
-anti-aliasing. The raw skeleton and FPS live behind ``debug``.
+anti-aliasing. The hand skeleton is a setting (and always on while a sign is
+recorded); FPS lives behind ``debug``.
 
 Everything here is drawn *onto the camera frame* at the camera's native
 resolution, which the HUD window then shrinks to its own size; :meth:`UIOverlay.s`
@@ -422,14 +423,14 @@ class UIOverlay:
     # -- public --------------------------------------------------------------
     def draw(self, frame, *, tracking, mode="none", mode_label="", cursor_px=None,
              zone_px, hands_px=None, exit_progress=0.0, dragging=False,
-             drag_progress=0.0, debug=False, fps=0.0,
+             drag_progress=0.0, debug=False, skeleton=False, fps=0.0,
              paused=False, hold_progress=0.0, sign_progress=0.0,
              record_progress=0.0) -> np.ndarray:
         # No control zone without the cursor: it maps the hand to the screen.
         if zone_px is not None:
             self._draw_zone(frame, zone_px, tracking)
 
-        if debug and hands_px:
+        if (skeleton or debug) and hands_px:
             self._draw_skeleton(frame, hands_px)
 
         # None of the per-mode chrome is drawn while paused: a reticle that
