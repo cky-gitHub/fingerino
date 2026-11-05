@@ -120,7 +120,9 @@ class Library:
         name = name.strip()[:NAME_MAX]
         sign = self.get(sign_id)
         if sign is not None and name:
-            sign.name = name
+            with self._lock:
+                sign.name = name
+                self._changed()          # the session re-reads names on a swap
 
     def set_enabled(self, sign_id: str, on: bool) -> None:
         sign = self.get(sign_id)

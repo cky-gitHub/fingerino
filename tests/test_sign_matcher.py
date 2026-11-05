@@ -279,8 +279,10 @@ def test_library_edits_swap_the_matcher():
     lib.set_enabled(sign.id, False)
     assert not lib.matcher
     lib.set_enabled(sign.id, True)
+    swapped = lib.matcher
     lib.rename(sign.id, "Peace")
     assert lib.name(sign.id) == "Peace"
+    assert lib.matcher is not swapped           # so the HUD picks the new name up
     lib.delete(sign.id)
     assert lib.signs == [] and not lib.matcher
 
