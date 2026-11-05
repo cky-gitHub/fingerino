@@ -12,7 +12,7 @@ pytest.importorskip("cv2")
 pytest.importorskip("pynput")
 
 import sessionkit
-from landmarks import both_palms, crossed, fist, point, shaka, two_finger
+from landmarks import both_palms, crossed_fingers, fist, point, shaka, two_finger
 from sessionkit import steady
 
 from fingerino import config, settings
@@ -77,7 +77,7 @@ def test_hold_pauses_signs_and_hold_again_resumes(monkeypatch):
 
 
 def test_exit_gesture_ends_the_session(monkeypatch):
-    frames = steady(crossed(), config.EXIT_HOLD_S + 0.3) + steady([shaka()], 2.0)
+    frames = steady([crossed_fingers()], config.EXIT_HOLD_S + 0.3) + steady([shaka()], 2.0)
     world = sessionkit.run(monkeypatch, frames)
     assert world.error is None
     assert world.i < len(frames) - 1                   # stopped early

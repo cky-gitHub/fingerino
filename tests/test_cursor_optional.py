@@ -7,7 +7,7 @@ works. With it on, nothing changed -- including the drag safety.
 
 import json
 
-from landmarks import both_palms, crossed, fist, flat, point, shaka, two_finger
+from landmarks import both_palms, crossed_fingers, fist, flat, point, shaka, two_finger
 
 from fingerino import config, settings
 from fingerino.gesture_detector import GestureEngine
@@ -65,7 +65,7 @@ def test_off_shaka_swipes_hold_and_exit_still_work():
     outs = run(GestureEngine(cursor=False), steady(both_palms(), config.HOLD_TOGGLE_S + 0.5))
     assert sum(o.hold_toggle for o in outs) == 1
 
-    outs = run(GestureEngine(cursor=False), steady(crossed(), config.EXIT_HOLD_S + 0.2))
+    outs = run(GestureEngine(cursor=False), steady([crossed_fingers()], config.EXIT_HOLD_S + 0.2))
     assert any(o.exit for o in outs)
 
 

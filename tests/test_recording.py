@@ -156,10 +156,10 @@ def test_held_gestures_still_let_exit_and_release_through(monkeypatch):
     pytest.importorskip("cv2")
     pytest.importorskip("pynput")
     import sessionkit
-    from landmarks import crossed
+    from landmarks import crossed_fingers
     from sessionkit import steady
 
-    frames = steady(crossed(), config.EXIT_HOLD_S + 0.3) + steady([shaka()], 2.0)
+    frames = steady([crossed_fingers()], config.EXIT_HOLD_S + 0.3) + steady([shaka()], 2.0)
     world = sessionkit.run(monkeypatch, frames, hook=lambda w, s: s.hold_gestures(True))
     assert world.i < len(frames) - 1                # stopped early: Exit worked
     assert world.actions == []

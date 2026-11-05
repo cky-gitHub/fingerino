@@ -19,7 +19,7 @@ FLIP_HORIZONTAL = True
 # Model
 # ---------------------------------------------------------------------------
 MODEL_FILENAME = "hand_landmarker.task"
-NUM_HANDS = 2                       # 2 so the cross-hands "X" exit can be seen
+NUM_HANDS = 2                       # 2 so both palms (Hold) can be seen
 MIN_HAND_DETECTION_CONFIDENCE = 0.5
 MIN_HAND_PRESENCE_CONFIDENCE = 0.5
 MIN_TRACKING_CONFIDENCE = 0.5
@@ -189,10 +189,16 @@ HOLD_RELEASE_GRACE_S = 0.20
 HOLD_MAX_DRIFT = 0.07
 
 # ---------------------------------------------------------------------------
-# Exit gesture: cross both hands into an "X"
+# Exit gesture: cross your index and middle fingers, like crossing fingers
 # ---------------------------------------------------------------------------
-EXIT_HOLD_S = 0.7                   # hold the X this long to quit (safety)
-EXIT_MIN_ANGLE_DEG = 25.0           # the two hands must actually cross, not align
+# One hand, so it still works when the other is out of view, unlike the two
+# hands overlapping, which MediaPipe loses track of.
+EXIT_HOLD_S = 0.7                   # hold the crossed fingers this long to quit
+# The fingertips' sideways gap, as a share of the gap between their knuckles:
+# about 1 for two fingers side by side, 0 when the tips meet, negative once
+# they have swapped sides. At or below this the fingers count as crossed.
+# Raise it if crossing is missed; lower it if a peace sign sets it off.
+EXIT_CROSS_RATIO = 0.3
 
 # ---------------------------------------------------------------------------
 # UI / theme  — clean, flat, professional (no glow, restrained colour)
@@ -262,7 +268,7 @@ GESTURE_GROUPS = (
     # Safety controls: always the same job, never rebindable.
     ("Session", (
         ("both_flat", "Hold", "Both palms up to pause all"),
-        ("cross", "Exit", "Cross both hands into an X"),
+        ("cross", "Exit", "Cross your index and middle fingers"),
     )),
 )
 

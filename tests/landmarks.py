@@ -28,7 +28,8 @@ _RELAXED = (0.35, 0.45, 0.45)
 def hand(*, thumb: bool = False, index: bool = False, middle: bool = False,
          ring: bool = False, pinky: bool = False,
          x: float = 0.5, y: float = 0.5, size: float = 0.1,
-         angle: float = 0.0, relaxed: bool = False) -> list[Landmark]:
+         angle: float = 0.0, relaxed: bool = False,
+         cross: bool = False) -> list[Landmark]:
     """An upright hand with the given fingers out, centred on the middle knuckle.
 
     ``size`` is the wrist-to-middle-knuckle distance (the detector's hand
@@ -50,6 +51,13 @@ def hand(*, thumb: bool = False, index: bool = False, middle: bool = False,
         pts.append((kx * s, 0.0))
         folded = _RELAXED if relaxed else _CURLED
         pts += [(kx * s, -h * s) for h in (_EXTENDED if out else folded)]
+
+    if cross:
+        # Index and middle swap sides: the index tip lands right of the middle tip.
+        for k, (dx_i, dx_m) in zip((6, 7, 8), ((0.1, -0.03), (0.2, -0.07), (0.3, -0.1)),
+                                   strict=True):
+            pts[k] = (pts[k][0] + dx_i * s, pts[k][1])
+            pts[k + 4] = (pts[k + 4][0] + dx_m * s, pts[k + 4][1])
 
     a = math.radians(angle)
     ca, sa = math.cos(a), math.sin(a)
@@ -83,9 +91,9 @@ def fist(**kw) -> list[Landmark]:
     return hand(**kw)
 
 
-def crossed() -> list[list[Landmark]]:
-    """Two hands crossed into an X at the wrists' midline."""
-    return [flat(x=0.42, y=0.55, angle=40), flat(x=0.58, y=0.55, angle=-40)]
+def crossed_fingers(**kw) -> list[Landmark]:
+    """Index and middle crossed over each other, ring and pinky folded."""
+    return hand(index=True, middle=True, cross=True, **kw)
 
 
 def both_palms() -> list[list[Landmark]]:

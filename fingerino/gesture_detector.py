@@ -11,7 +11,7 @@ discrete events each frame:
     flat hand (4 out)    -> flat      -> a swipe emits a flat_<direction> sign
     thumb + pinky out    -> shaka     -> held briefly, emits the shaka sign
     both hands flat      -> hold      -> hold both palms still to pause
-    both hands crossed   -> exit      -> hold the "X" briefly to quit
+    crossed fingers      -> exit      -> hold briefly to quit
 
 Signs are only *named* here. What a sign does is looked up in
 ``actions.Registry``, so the detector never decides that a shaka means "open a
@@ -171,28 +171,23 @@ def is_shaka(lms: Landmarks) -> bool:
     )
 
 
-# ---------------------------------------------------------------------------
-# Geometry for the two-hand "X"
-# ---------------------------------------------------------------------------
-def _ccw(a, b, c) -> float:
-    return (c[1] - a[1]) * (b[0] - a[0]) - (b[1] - a[1]) * (c[0] - a[0])
+def is_crossed_fingers(lms: Landmarks) -> bool:
+    """Index and middle out and crossed, ring and pinky in -- the Exit posture.
 
-
-def _segments_cross(p1, p2, p3, p4) -> bool:
-    d1, d2 = _ccw(p3, p4, p1), _ccw(p3, p4, p2)
-    d3, d4 = _ccw(p1, p2, p3), _ccw(p1, p2, p4)
-    return (d1 > 0) != (d2 > 0) and (d3 > 0) != (d4 > 0)
-
-
-def _cross_angle_deg(p1, p2, p3, p4) -> float:
-    v1 = (p2[0] - p1[0], p2[1] - p1[1])
-    v2 = (p4[0] - p3[0], p4[1] - p3[1])
-    n1, n2 = math.hypot(*v1), math.hypot(*v2)
-    if n1 == 0 or n2 == 0:
-        return 0.0
-    c = max(-1.0, min(1.0, (v1[0] * v2[0] + v1[1] * v2[1]) / (n1 * n2)))
-    a = math.degrees(math.acos(c))
-    return min(a, 180.0 - a)  # undirected crossing angle
+    Crossed means the fingertips have changed sides, or met, compared with
+    their knuckles. That is read along the line between the two knuckles, so
+    it holds however the hand is turned.
+    """
+    m = config.FINGER_EXTEND_MARGIN
+    if not (_extended(lms, _INDEX, m) and _extended(lms, _MIDDLE, m)
+            and not _extended(lms, _RING, m) and not _extended(lms, _PINKY, m)):
+        return False
+    ux, uy = lms[_MIDDLE_MCP][0] - lms[_INDEX_MCP][0], lms[_MIDDLE_MCP][1] - lms[_INDEX_MCP][1]
+    tx, ty = lms[_MIDDLE_TIP][0] - lms[_INDEX_TIP][0], lms[_MIDDLE_TIP][1] - lms[_INDEX_TIP][1]
+    knuckles = ux * ux + uy * uy
+    if knuckles == 0:
+        return False
+    return (tx * ux + ty * uy) / knuckles <= config.EXIT_CROSS_RATIO
 
 
 # ---------------------------------------------------------------------------
@@ -425,18 +420,12 @@ class GestureEngine:
 
     # -- sub-behaviours ------------------------------------------------------
     def _check_exit(self, hands: list[Landmarks], now: float) -> float:
-        if len(hands) < 2:
+        if not any(is_crossed_fingers(h) for h in hands):
             self._x_start = None
             return 0.0
-        a1, a2 = hands[0][_WRIST][:2], hands[0][_MIDDLE_TIP][:2]
-        b1, b2 = hands[1][_WRIST][:2], hands[1][_MIDDLE_TIP][:2]
-        if _segments_cross(a1, a2, b1, b2) and \
-                _cross_angle_deg(a1, a2, b1, b2) >= config.EXIT_MIN_ANGLE_DEG:
-            if self._x_start is None:
-                self._x_start = now
-            return min(1.0, (now - self._x_start) / config.EXIT_HOLD_S)
-        self._x_start = None
-        return 0.0
+        if self._x_start is None:
+            self._x_start = now
+        return min(1.0, (now - self._x_start) / config.EXIT_HOLD_S)
 
     def _check_hold(self, hands: list[Landmarks], now: float,
                     out: GestureOutput) -> None:
@@ -554,7 +543,7 @@ class GestureEngine:
             self._expire_hold(now)
             return False
 
-        # Two-hand "X" takes priority and suppresses everything else.
+        # Crossed fingers take priority and suppress everything else.
         progress = self._check_exit(hands, now)
         if progress > 0.0:
             self._scroll_prev_y = None

@@ -13,7 +13,7 @@ off until it is turned on in Home's Gestures page:
     New chat  shaka sign (thumb + pinky out)
     Hold      both palms up, held still ~1s — pauses every gesture; do it
               again to hand control back to exactly the same set
-    Exit      cross both hands into an "X" and hold briefly — stops tracking
+    Exit      cross your index and middle fingers and hold briefly — stops tracking
 
     fingerino            # open Home; press Start to track (or: python -m fingerino)
     fingerino --debug    # add raw skeleton + FPS to the HUD

@@ -807,9 +807,8 @@ ApplicationWindow {
                                 implicitHeight: 18
                                 radius: 9
                                 color: "transparent"
-                                border.width: 1
+                                border.width: 1.5
                                 border.color: "#d29922"
-                                opacity: 0.85
                                 Accessible.role: Accessible.StaticText
                                 Accessible.name: mine.modelData.warning
                                 Label {

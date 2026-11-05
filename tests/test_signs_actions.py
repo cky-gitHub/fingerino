@@ -9,7 +9,7 @@ code around without changing what anyone's hand does.
 import pytest
 from landmarks import (
     both_palms,
-    crossed,
+    crossed_fingers,
     fist,
     flat,
     point,
@@ -167,10 +167,10 @@ def test_both_palms_held_toggle_hold_once_and_never_swipe():
     assert all_signs(outs) == []
 
 
-def test_crossed_hands_exit_after_the_hold():
-    outs = run(GestureEngine(), steady(crossed(), config.EXIT_HOLD_S + 0.2))
-    # The first crossed frame starts the clock at zero progress, so it still
-    # reads as two open palms; from the next frame on it is Exit.
+def test_crossed_fingers_exit_after_the_hold():
+    outs = run(GestureEngine(), steady([crossed_fingers()], config.EXIT_HOLD_S + 0.2))
+    # The first crossed frame starts the clock at zero progress; from the
+    # next frame on it is Exit.
     assert all(o.mode == "exit" for o in outs[1:])
     first = next(i for i, o in enumerate(outs) if o.exit)
     assert first * DT >= config.EXIT_HOLD_S - DT
@@ -178,7 +178,7 @@ def test_crossed_hands_exit_after_the_hold():
 
 
 def test_a_brief_cross_does_not_exit():
-    frames = steady(crossed(), config.EXIT_HOLD_S / 2) + steady([fist()], 0.3)
+    frames = steady([crossed_fingers()], config.EXIT_HOLD_S / 2) + steady([fist()], 0.3)
     assert not any(o.exit for o in run(GestureEngine(), frames))
 
 

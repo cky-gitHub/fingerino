@@ -208,7 +208,8 @@ class Recorder:
                 self._looks[name] = self._looks.get(name, 0) + 1
 
     def _builtin_tests(self):
-        tests = [("the shaka", gd.is_shaka),
+        tests = [("crossed fingers, which exits Fingerino", gd.is_crossed_fingers),
+                 ("the shaka", gd.is_shaka),
                  ("an open palm, which swipes", gd.is_flat_hand)]
         if self.cursor:
             tests += [(f"pointing, which clicks {CURSOR_NOTE}", gd.is_pointing),

@@ -89,7 +89,7 @@ works either way.
 | **Flat hand**, swipe **left** | Switch window (Alt+Tab) |
 | **Shaka** — thumb + pinky out ("call me") | Open a new AI chat (Alt+Space) |
 | **Both palms up**, held still ~1s | Hold: pause every gesture — again to resume |
-| **Cross both hands** into an "X", hold | Quit the app |
+| **Cross your index and middle fingers**, hold ~0.7s | Quit the app |
 
 A quick point is a plain click and holds nothing down — so the cursor drift of
 your hand changing shape can't smear it into a stray drag. Keep the index out
@@ -253,8 +253,8 @@ runs when the hand leaves the frame and on every shutdown, and it never stays
 down longer than `DRAG_MAX_S`. Destructive gestures (Exit, and the shaka
 new-chat) must be **held** briefly to guard against accidents.
 
-Two-hand postures are resolved before anything else: crossed hands are Exit,
-two open palms are Hold, and both shut the one-hand paths out entirely — which
+Crossed fingers (Exit) are resolved before anything else, then two open palms
+(Hold); both shut the one-hand paths out entirely — which
 is why raising both hands to pause can't wave a window away on the way up. Hold
 is a mode rather than a mass toggle, so the per-gesture switches in Home
 are left untouched and resuming restores exactly the set that was live.

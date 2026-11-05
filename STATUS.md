@@ -34,9 +34,14 @@ code, and the cursor is an optional module that is off by default.
      fixed on this branch: gestures now stay silent from the record
      countdown to the end of the dialog (`Session.hold_gestures`), and a
      saved sign that may never fire gets a quiet "!" with a hover note.
-   - Reported, not changed: swiping left/right to switch windows is hard to
-     trigger and the HUD arrows are weak. Needs a swipe-constants proposal.
-   - Not yet checked: Hold (both palms) and Exit (crossed hands), macOS.
+   - HUD arrows for swipes are weak (reported, not changed).
+   - Exit changed from two crossed hands to **crossed index and middle
+     fingers** (`is_crossed_fingers`, `EXIT_CROSS_RATIO` in config.py): the
+     crossed hands were not recognised on the real camera, most likely
+     because overlapping hands make MediaPipe lose one. Camera-tested: no.
+   - Swipes: slow, long ones work; short fast ones do not. Poor camera and
+     lighting are a likely contributor. Proposal pending, see chat.
+   - Not yet checked: Hold (both palms), the new Exit, macOS.
    - Gotcha: first run needs to reach storage.googleapis.com for the model;
      a failed download is reported as a crash ("attach crash.txt"), which is
      misleading. Worth a friendlier message.
@@ -48,7 +53,7 @@ code, and the cursor is an optional module that is off by default.
    - *Record a sign* (e.g. thumbs up), name it, bind it, hold it ~0.6 s:
      the action runs and the card flashes "Recognised".
    - Recording a shaka, or the same sign twice, shows a warning.
-   - Hold (both palms) and Exit (crossed hands) still work.
+   - Hold (both palms) and Exit (crossed fingers) still work.
    - Repeat the action checks on macOS; there is no macOS CI job.
    - If recognition feels too strict or loose, tune `SIGN_MATCH_MAX_DIST`,
      `SIGN_MAX_ANGLE_DEG` and `SIGN_HOLD_S` in `fingerino/config.py`.
