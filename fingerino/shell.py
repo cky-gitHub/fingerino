@@ -20,11 +20,29 @@ from pathlib import Path
 from typing import cast
 
 import numpy as np
-from PySide6.QtCore import Property, QObject, QSize, Qt, QTimer, QUrl, Signal, Slot
-from PySide6.QtGui import QAction, QDesktopServices, QIcon, QImage
+from PySide6.QtCore import (
+    Property,
+    QObject,
+    QPointF,
+    QSize,
+    Qt,
+    QTimer,
+    QUrl,
+    Signal,
+    Slot,
+)
+from PySide6.QtGui import (
+    QAction,
+    QColor,
+    QDesktopServices,
+    QIcon,
+    QImage,
+    QPainter,
+    QPen,
+)
 from PySide6.QtNetwork import QLocalServer, QLocalSocket
 from PySide6.QtQml import QQmlApplicationEngine
-from PySide6.QtQuick import QQuickWindow
+from PySide6.QtQuick import QQuickImageProvider, QQuickWindow
 from PySide6.QtQuickControls2 import QQuickStyle
 from PySide6.QtWidgets import QApplication, QMenu, QSystemTrayIcon
 
@@ -52,6 +70,84 @@ def _style() -> str:
     if sys.platform == "darwin":
         return "macOS"
     return "Fusion"
+
+
+def text_scale() -> float:
+    """Windows' "Text size" accessibility setting, as a factor (1.0 to 2.25).
+
+    Qt doesn't apply it, so Home scales its own type by this. 1.0 elsewhere,
+    and whenever the setting can't be read.
+    """
+    if sys.platform != "win32":
+        return 1.0
+    try:
+        import winreg
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER,
+                            r"Software\Microsoft\Accessibility") as key:
+            value, _ = winreg.QueryValueEx(key, "TextScaleFactor")
+        return min(2.25, max(1.0, int(value) / 100))
+    except (OSError, ValueError, TypeError):
+        return 1.0
+
+
+def to_pynput(combo: str) -> str:
+    """``"ctrl+alt+f"`` -> ``"<ctrl>+<alt>+f"``, the form GlobalHotKeys reads."""
+    return "+".join(p if len(p) == 1 else f"<{p}>" for p in combo.split("+"))
+
+
+_HAND_LINES = (
+    (0, 1), (1, 2), (2, 3), (3, 4), (0, 5), (5, 6), (6, 7), (7, 8),
+    (5, 9), (9, 10), (10, 11), (11, 12), (9, 13), (13, 14), (14, 15), (15, 16),
+    (13, 17), (17, 18), (18, 19), (19, 20), (0, 17),
+)
+
+# Stroke colours for custom-sign pictures: the built-in drawings' blue on
+# dark, and a darker blue that keeps 4.5:1 on Windows' light surfaces.
+SIGN_PICTURE_COLORS = {"dark": "#6c9cbd", "light": "#2f5f80"}
+
+
+def sign_picture(sample: list, color: str, size: int = 96) -> QImage:
+    """A line drawing of one recorded sample.
+
+    Drawn from the hand Fingerino learned, in the stroke style of the
+    built-in pictures, so a custom sign's row shows what will be matched.
+    """
+    xs = [p[0] for p in sample]
+    ys = [p[1] for p in sample]
+    span = max(max(xs) - min(xs), max(ys) - min(ys), 1e-6)
+    margin = size * 0.12
+    k = (size - 2 * margin) / span
+    ox = (size - (max(xs) - min(xs)) * k) / 2 - min(xs) * k
+    oy = (size - (max(ys) - min(ys)) * k) / 2 - min(ys) * k
+    pts = [(ox + x * k, oy + y * k) for x, y in zip(xs, ys, strict=True)]
+
+    img = QImage(size, size, QImage.Format.Format_ARGB32_Premultiplied)
+    img.fill(Qt.GlobalColor.transparent)
+    painter = QPainter(img)
+    painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+    pen = QPen(QColor(color), size / 40)
+    pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+    pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
+    painter.setPen(pen)
+    for a, b in _HAND_LINES:
+        painter.drawLine(QPointF(*pts[a]), QPointF(*pts[b]))
+    painter.end()
+    return img
+
+
+class SignPictures(QQuickImageProvider):
+    """Serves ``image://signs/<sign id>/<dark|light>`` to Home's QML."""
+
+    def __init__(self, shell: Shell) -> None:
+        super().__init__(QQuickImageProvider.ImageType.Image)
+        self._shell = shell
+
+    def requestImage(self, image_id: str, size: QSize, requested: QSize) -> QImage:
+        sign_id, _, theme = image_id.partition("/")
+        sign = self._shell.library.get(sign_id)
+        if sign is None or not sign.samples:
+            return QImage()
+        return self._shell.sign_picture(sign, theme if theme in SIGN_PICTURE_COLORS else "dark")
 
 
 def hotkey_label(combo: str) -> str:
@@ -165,6 +261,7 @@ class Bridge(QObject):
             {"name": name,
              "cursor": any(icon in config.CURSOR_GESTURES for icon, _, _ in rows),
              "rows": [{"icon": icon, "label": label, "desc": desc,
+                       "title": config.SIGN_TITLES.get(icon, label),
                        "image": self._icons.get(icon, ""),
                        "cursor": icon in config.CURSOR_GESTURES,
                        "sign": icon in BUILTIN_SIGNS}
@@ -252,7 +349,12 @@ class Bridge(QObject):
     # actionInfo() so they re-evaluate.
     bindingsVersion = Property(int, _bindings_version_, notify=bindingsChanged)
     version = Property(str, _version, constant=True)
-    hotkey = Property(str, _hotkey, constant=True)
+    hotkey = Property(str, _hotkey, notify=settingsChanged)
+
+    def _text_scale(self) -> float:
+        return self._shell.text_scale
+
+    textScale = Property(float, _text_scale, constant=True)
 
     # -- actions ----------------------------------------------------------------
 
@@ -296,7 +398,9 @@ class Bridge(QObject):
         lib, cursor = self._shell.library, self._shell.prefs.cursor
         return [{"id": s.id, "name": s.name, "enabled": s.enabled,
                  "action": actions.describe(reg.action_for(s.id))["label"],
-                 "warning": lib.warning(s.id, cursor)}
+                 "warning": lib.warning(s.id, cursor),
+                 "image": f"image://signs/{s.id}/dark",
+                 "imageLight": f"image://signs/{s.id}/light"}
                 for s in lib.signs]
 
     def _record_state(self) -> str:
@@ -402,6 +506,19 @@ class Bridge(QObject):
         self._shell.end_trial()
 
     @Slot(int, int, result=str)
+    def keyCombo(self, key: int, modifiers: int) -> str:
+        """The shortcut being pressed, as stored ("ctrl+shift+k"), or ""."""
+        return combo_from_qt(key, modifiers)
+
+    @Slot(str, result=str)
+    def setHotkey(self, combo: str) -> str:
+        """Change the pause shortcut; an error message, or "" once it works."""
+        error = self._shell.set_hotkey(combo)
+        if not error:
+            self.settingsChanged.emit()
+        return error
+
+    @Slot(int, int, result=str)
     def comboFromKey(self, key: int, modifiers: int) -> str:
         """The shortcut being pressed, as people write it ("Ctrl+Shift+K")."""
         combo = combo_from_qt(key, modifiers)
@@ -481,6 +598,8 @@ class Shell:
         self.record_progress = 0.0
         self.record_message = ""
         self.record_warning = ""
+        self.text_scale = text_scale()
+        self._pictures: dict[tuple[str, int, str], QImage] = {}
         self._hold_reasons: set[str] = set()    # see hold_gestures()
         self.trial: tuple[str, actions.Action] | None = None   # see start_trial()
         self._recording: signs.Recording | None = None
@@ -511,6 +630,7 @@ class Shell:
 
         self.bridge = Bridge(self)
         self.engine = QQmlApplicationEngine()
+        self.engine.addImageProvider("signs", SignPictures(self))
         self.engine.setInitialProperties({"bridge": self.bridge})
         self.engine.load(QUrl.fromLocalFile(str(_QML)))
         roots = self.engine.rootObjects()
@@ -537,6 +657,7 @@ class Shell:
         if tray and QSystemTrayIcon.isSystemTrayAvailable():
             self._build_tray(icon)
 
+        self._hotkey_wanted = hotkey
         self._hotkey = (system_actions.listen_hotkey(prefs.hotkey,
                                                      self._relay.hotkey.emit)
                         if hotkey else None)
@@ -664,6 +785,32 @@ class Shell:
         self._recording = None
         self._record_update("capturing")
         self.session.start_recording(config.SIGN_RECORD_S)
+
+    def sign_picture(self, sign: signs.Sign, theme: str) -> QImage:
+        """The row picture for a custom sign, cached per sign and samples."""
+        key = (sign.id, id(sign.samples), theme)
+        if key not in self._pictures:
+            sample = sign.samples[len(sign.samples) // 2]
+            self._pictures[key] = sign_picture(sample, SIGN_PICTURE_COLORS[theme])
+        return self._pictures[key]
+
+    def set_hotkey(self, combo: str) -> str:
+        """Listen for ``combo`` (``"ctrl+alt+f"``) instead of the current
+        pause shortcut. Keeps the old one if the new one can't be used."""
+        parts = combo.split("+") if combo else []
+        if not parts or not ({"ctrl", "alt", "cmd"} & set(parts[:-1])):
+            return "Use Ctrl, Alt or Win with another key, so it can't be typed by accident."
+        new = to_pynput(combo)
+        if self._hotkey_wanted:
+            listener = system_actions.listen_hotkey(new, self._relay.hotkey.emit)
+            if listener is None:
+                return "That shortcut can't be used here. Try another."
+            if self._hotkey is not None:
+                self._hotkey.stop()
+            self._hotkey = listener
+        self.prefs.hotkey = new
+        self.save()
+        return ""
 
     def hold_gestures(self, on: bool, reason: str = "record") -> None:
         """Silence gestures while any reason holds them.

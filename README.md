@@ -51,7 +51,7 @@ bound to a command runs exactly the command you typed, on your computer.
 | --- | --- |
 | `hand_landmarker.task` | The downloaded model (absent if your installer bundled it) |
 | `fingerino-v1.ico` | The app icon, drawn on first run |
-| `settings.json` | Which gestures you switched off, whether the cursor and the hand skeleton are on, and whether you've seen the welcome |
+| `settings.json` | Which gestures you switched off, whether the cursor and the hand skeleton are on, your pause shortcut, and whether you've seen the welcome |
 | `actions.json` | What you changed your signs to do (shortcuts, apps, links, commands) |
 | `signs.json` | Signs you recorded: a name and the positions of 21 hand joints per sample — never an image |
 | `selftest.txt` | Written by `--selftest`, for when you need to report a problem |
