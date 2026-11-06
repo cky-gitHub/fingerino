@@ -20,7 +20,7 @@ code, and the cursor is an optional module that is off by default.
   4. Sign matcher (`fingerino/sign_matcher.py`), no UI.
   5. Recording signs in Home (`fingerino/signs.py`, `signs.json`): record,
      name, bind, rename, switch off, delete, "Recognised" feedback.
-- **Tests:** 295 pass, 1 skipped, with all dependencies (the dependency-free
+- **Tests:** 297 pass, 1 skipped, with all dependencies (the dependency-free
   job runs fewer). First real-camera check done on Windows, see below.
 
 ## What needs doing next
@@ -55,9 +55,11 @@ code, and the cursor is an optional module that is off by default.
      editor closes, with no gap at the hand-over (Home holds per reason:
      "record", "editor"; `Shell.hold_gestures`). The editor also holds when
      opened on its own. Covered by a test that drives the real QML flow.
-   - "Try it" feedback on the HUD: a 1 s green pulse when the sign is
-     recognised, then a thin green frame until the editor closes
-     (`TRIAL_PULSE_S`, `TRIAL_PULSE_ALPHA`, `TRIAL_FRAME_PX`, `COLOR_TRIAL`).
+   - "Try it" feedback on the HUD: once the sign is recognised a constant
+     thin green frame stays until the editor closes, and each recognition
+     sends a 450 ms gleam from it into the picture (80 ms rise, 370 ms
+     ease-out; NN/g's 200-500 ms range). `TRIAL_*` and `COLOR_TRIAL` in
+     config.py.
    - PASS: crossed-fingers Exit stopped tracking on the real camera.
    - New setting: "Show the hand skeleton" (settings.json `skeleton`, off by
      default), always drawn while recording a sign.

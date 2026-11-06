@@ -2,8 +2,8 @@
 
 Neutral greys throughout, hairline strokes, state carried by brightness
 rather than hue; the status dot is the only thing that stays coloured,
-because it reports a live condition -- and the green "Try it" pulse and
-frame, which confirm that the sign being tried was recognised. Text is rendered with PIL for crisp
+because it reports a live condition -- and the green "Try it" frame and
+gleam, which confirm that the sign being tried was recognised. Text is rendered with PIL for crisp
 anti-aliasing. The hand skeleton is a setting (and always on while a sign is
 recorded); FPS lives behind ``debug``.
 
@@ -167,6 +167,8 @@ class UIOverlay:
         self._icons: list[tuple[Image.Image, int, int]] = []
         # "Try it": when the tried sign was last recognised (None: not yet).
         self._trial_seen_t: float | None = None
+        self._glow_key: tuple[int, int] | None = None
+        self._glow: np.ndarray = np.zeros((1, 1, 1), np.float32)
 
     def s(self, v: float) -> int:
         """Scale a design-space size into frame-space.
@@ -258,28 +260,48 @@ class UIOverlay:
         """The sign under "Try it" just fired: pulse, then keep the frame."""
         self._trial_seen_t = time.time()
 
+    def _trial_glow_strength(self, now: float) -> float:
+        """0..1: how strong the gleam is ``now``; quick rise, eased fade."""
+        if self._trial_seen_t is None:
+            return 0.0
+        t = now - self._trial_seen_t
+        if t < 0.0:
+            return 0.0
+        if t < config.TRIAL_GLOW_IN_S:
+            return t / config.TRIAL_GLOW_IN_S
+        u = (t - config.TRIAL_GLOW_IN_S) / config.TRIAL_GLOW_OUT_S
+        return 0.0 if u >= 1.0 else (1.0 - u) ** 2      # ease-out
+
+    def _glow_mask(self, h: int, w: int) -> np.ndarray:
+        """Per-pixel falloff from the frame's edge inwards, cached per size."""
+        key = (h, w)
+        if self._glow_key != key:
+            depth = max(1.0, float(self.s(config.TRIAL_GLOW_DEPTH_PX)))
+            ys = np.minimum(np.arange(h), np.arange(h)[::-1]).astype(np.float32)
+            xs = np.minimum(np.arange(w), np.arange(w)[::-1]).astype(np.float32)
+            edge = np.minimum(ys[:, None], xs[None, :])
+            falloff = np.clip(1.0 - edge / depth, 0.0, 1.0) ** 2
+            self._glow = falloff[..., None].astype(np.float32)
+            self._glow_key = key
+        return self._glow
+
     def _draw_trial(self, frame, trial: bool) -> None:
-        """Green glow for TRIAL_PULSE_S after a recognition, then a thin frame
-        for as long as the trial lasts. Nothing before the first one."""
+        """A constant thin green frame once the tried sign has been
+        recognised, and a brief gleam from it into the picture each time it
+        is. Nothing before the first recognition."""
         if not trial:
             self._trial_seen_t = None
             return
         if self._trial_seen_t is None:
             return
         h, w = frame.shape[:2]
-        p = (time.time() - self._trial_seen_t) / config.TRIAL_PULSE_S
+        k = self._trial_glow_strength(time.time())
+        if k > 0.0:
+            alpha = self._glow_mask(h, w) * (config.TRIAL_GLOW_ALPHA * k)
+            green = np.array(config.COLOR_TRIAL, dtype=np.float32)
+            frame[:] = (frame * (1.0 - alpha) + green * alpha).astype(np.uint8)
         thin = self.s(config.TRIAL_FRAME_PX)
-        if p < 1.0:
-            # One swell and fade: up for the first half, back down after.
-            k = float(np.sin(np.pi * p))
-            green = np.empty_like(frame)
-            green[:] = config.COLOR_TRIAL
-            cv2.addWeighted(green, config.TRIAL_PULSE_ALPHA * k, frame,
-                            1.0 - config.TRIAL_PULSE_ALPHA * k, 0, dst=frame)
-            border = thin + round(self.s(10) * k)
-        else:
-            border = thin
-        cv2.rectangle(frame, (0, 0), (w - 1, h - 1), config.COLOR_TRIAL, border * 2)
+        cv2.rectangle(frame, (0, 0), (w - 1, h - 1), config.COLOR_TRIAL, thin * 2)
 
     def _palm_px(self, hand_px):
         xs = sum(hand_px[i][0] for i in _PALM_POINTS) / len(_PALM_POINTS)

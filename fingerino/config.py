@@ -289,8 +289,14 @@ GESTURE_TUTORIAL = tuple(
 # Feedback timings (seconds).
 CLICK_FLASH_S = 0.16
 TOAST_S = 1.2
-# "Try it": when the sign is recognised the HUD glows green for this long,
-# then keeps a thin green frame until the action editor closes.
-TRIAL_PULSE_S = 1.0
-TRIAL_PULSE_ALPHA = 0.30            # strongest green tint over the video, 0..1
-TRIAL_FRAME_PX = 2                  # the frame's width afterwards (design px)
+# "Try it": when the sign is recognised a thin green frame appears and stays
+# until the action editor closes; the frame itself never changes. Each
+# recognition sends one quick gleam from the frame into the picture. Rise
+# within the ~100 ms that reads as instant, fade with an ease-out, 450 ms in
+# all: inside the usual 200-500 ms for UI feedback (NN/g) and Material's
+# short-to-medium motion durations, so it confirms without lingering.
+TRIAL_FRAME_PX = 2                  # the frame's width (design px), constant
+TRIAL_GLOW_IN_S = 0.08              # gleam rises
+TRIAL_GLOW_OUT_S = 0.37             # gleam fades (ease-out)
+TRIAL_GLOW_ALPHA = 0.55             # gleam strength at the frame, 0..1
+TRIAL_GLOW_DEPTH_PX = 36            # how far it reaches in (design px)

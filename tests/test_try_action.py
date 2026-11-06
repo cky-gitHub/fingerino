@@ -227,36 +227,60 @@ def _frame():
     return np.full((270, 480, 3), 40, dtype=np.uint8)
 
 
-def test_the_hud_pulses_green_then_keeps_a_thin_frame(monkeypatch):
+def test_the_frame_is_constant_and_only_the_gleam_pulses(monkeypatch):
     ui = _overlay()
     clock = [1000.0]
     monkeypatch.setattr(ui.time, "time", lambda: clock[0])
     o = ui.UIOverlay()
     green = tuple(config.COLOR_TRIAL)
+    edge = o.s(config.TRIAL_FRAME_PX) * 2              # rectangle drawn centred on the edge
+    inside = edge // 2 + 3                              # just inside the frame line
 
     plain = _frame()
     o._draw_trial(plain, True)                          # armed, not recognised yet
     assert (plain == 40).all()
 
+    def frame_at(dt):
+        clock[0] = 1000.0 + dt
+        f = _frame()
+        o._draw_trial(f, True)
+        return f
+
     o.trial_recognised()
-    clock[0] += config.TRIAL_PULSE_S / 2                # the top of the pulse
-    mid = _frame()
-    o._draw_trial(mid, True)
-    assert tuple(mid[0, 0]) == green                    # thick frame at the edge
-    assert mid[135, 240][1] > 40 + 20                   # the middle is tinted green
+    peak = frame_at(config.TRIAL_GLOW_IN_S)
+    after = frame_at(config.TRIAL_GLOW_IN_S + config.TRIAL_GLOW_OUT_S + 0.05)
+    for f in (peak, after):
+        assert tuple(f[0, 240]) == green                # the frame line
+    # Same width at the peak and afterwards: it never grows.
+    assert all(tuple(peak[y, 240]) == green for y in range(edge // 2))
+    assert tuple(peak[edge, 240]) != green
+    # The gleam: green near the edge at the peak, fading towards the middle.
+    assert peak[inside, 240][1] > 40 + 30
+    assert (peak[135, 240] == 40).all()                 # the middle is untouched
+    assert (after[inside, 240] == 40).all()             # gone afterwards
 
-    clock[0] += config.TRIAL_PULSE_S                    # after the pulse
-    after = _frame()
-    o._draw_trial(after, True)
-    assert tuple(after[0, 0]) == green                  # thin frame stays
-    assert (after[135, 240] == 40).all()                # no tint any more
-    edge = o.s(config.TRIAL_FRAME_PX) * 2
-    assert (after[edge + 2, 240] == 40).all()
 
-    ended = _frame()
-    o._draw_trial(ended, False)                         # editor closed
-    o._draw_trial(ended, True)                          # a new trial starts clean
-    assert (ended == 40).all()
+def test_the_gleam_is_quick_and_eases_out():
+    ui = _overlay()
+    o = ui.UIOverlay()
+    o._trial_seen_t = 0.0
+    total = config.TRIAL_GLOW_IN_S + config.TRIAL_GLOW_OUT_S
+    assert config.TRIAL_GLOW_IN_S <= 0.1                # reads as instant
+    assert 0.2 <= total <= 0.5                          # UI feedback range
+    assert o._trial_glow_strength(config.TRIAL_GLOW_IN_S) == pytest.approx(1.0)
+    half = o._trial_glow_strength(config.TRIAL_GLOW_IN_S + config.TRIAL_GLOW_OUT_S / 2)
+    assert half < 0.5                                   # eased: most of the fade is early
+    assert o._trial_glow_strength(total + 0.01) == 0.0
+
+
+def test_a_new_trial_starts_without_a_frame(monkeypatch):
+    ui = _overlay()
+    o = ui.UIOverlay()
+    o.trial_recognised()
+    f = _frame()
+    o._draw_trial(f, False)                             # editor closed
+    o._draw_trial(f, True)                              # next trial
+    assert (f == 40).all()
 
 
 def test_the_session_tells_the_hud_about_a_trial_and_its_recognition(monkeypatch):
