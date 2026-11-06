@@ -2,7 +2,8 @@
 
 Neutral greys throughout, hairline strokes, state carried by brightness
 rather than hue; the status dot is the only thing that stays coloured,
-because it reports a live condition. Text is rendered with PIL for crisp
+because it reports a live condition -- and the green "Try it" pulse and
+frame, which confirm that the sign being tried was recognised. Text is rendered with PIL for crisp
 anti-aliasing. The hand skeleton is a setting (and always on while a sign is
 recorded); FPS lives behind ``debug``.
 
@@ -164,6 +165,8 @@ class UIOverlay:
         # queued PIL text draws and icon pastes for the single compositing pass
         self._texts: list[tuple] = []
         self._icons: list[tuple[Image.Image, int, int]] = []
+        # "Try it": when the tried sign was last recognised (None: not yet).
+        self._trial_seen_t: float | None = None
 
     def s(self, v: float) -> int:
         """Scale a design-space size into frame-space.
@@ -250,6 +253,33 @@ class UIOverlay:
             radius = self.s(9) + int(p * self.s(13))
             _blend_ring(frame, (x, y), radius, config.COLOR_ACCENT,
                         max(0.0, (1.0 - p) * 0.9), thickness=self.s(1))
+
+    def trial_recognised(self) -> None:
+        """The sign under "Try it" just fired: pulse, then keep the frame."""
+        self._trial_seen_t = time.time()
+
+    def _draw_trial(self, frame, trial: bool) -> None:
+        """Green glow for TRIAL_PULSE_S after a recognition, then a thin frame
+        for as long as the trial lasts. Nothing before the first one."""
+        if not trial:
+            self._trial_seen_t = None
+            return
+        if self._trial_seen_t is None:
+            return
+        h, w = frame.shape[:2]
+        p = (time.time() - self._trial_seen_t) / config.TRIAL_PULSE_S
+        thin = self.s(config.TRIAL_FRAME_PX)
+        if p < 1.0:
+            # One swell and fade: up for the first half, back down after.
+            k = float(np.sin(np.pi * p))
+            green = np.empty_like(frame)
+            green[:] = config.COLOR_TRIAL
+            cv2.addWeighted(green, config.TRIAL_PULSE_ALPHA * k, frame,
+                            1.0 - config.TRIAL_PULSE_ALPHA * k, 0, dst=frame)
+            border = thin + round(self.s(10) * k)
+        else:
+            border = thin
+        cv2.rectangle(frame, (0, 0), (w - 1, h - 1), config.COLOR_TRIAL, border * 2)
 
     def _palm_px(self, hand_px):
         xs = sum(hand_px[i][0] for i in _PALM_POINTS) / len(_PALM_POINTS)
@@ -425,13 +455,14 @@ class UIOverlay:
              zone_px, hands_px=None, exit_progress=0.0, dragging=False,
              drag_progress=0.0, debug=False, skeleton=False, fps=0.0,
              paused=False, hold_progress=0.0, sign_progress=0.0,
-             record_progress=0.0) -> np.ndarray:
+             record_progress=0.0, trial=False) -> np.ndarray:
         # No control zone without the cursor: it maps the hand to the screen.
         if zone_px is not None:
             self._draw_zone(frame, zone_px, tracking)
 
         if (skeleton or debug) and hands_px:
             self._draw_skeleton(frame, hands_px)
+        self._draw_trial(frame, trial)
 
         # None of the per-mode chrome is drawn while paused: a reticle that
         # doesn't move the cursor, or scroll chevrons that scroll nothing,

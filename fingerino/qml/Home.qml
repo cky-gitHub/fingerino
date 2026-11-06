@@ -179,8 +179,15 @@ ApplicationWindow {
             open()
         }
 
-        // "Try it" lasts until the editor closes, however it closes.
-        onClosed: win.bridge.endTrial()
+        // Nothing acts while the editor is open (only the sign under "Try
+        // it", with its new action), and the trial ends when it closes,
+        // however it closes. Held from aboutToShow, so a sign just recorded
+        // goes straight from the record dialog's hold into this one.
+        onAboutToShow: win.bridge.holdGestures("editor", true)
+        onClosed: {
+            win.bridge.endTrial()
+            win.bridge.holdGestures("editor", false)
+        }
 
         Connections {
             target: win.bridge
@@ -420,7 +427,7 @@ ApplicationWindow {
             if (!win.bridge.running)
                 win.bridge.start()
             saveError.text = ""
-            win.bridge.holdGestures(true)    // the hand is busy; nothing should fire
+            win.bridge.holdGestures("record", true)    // the hand is busy; nothing should fire
             win.bridge.cancelRecording()
             countdown = win.bridge.recordCountdown
             countdownTimer.start()
@@ -428,7 +435,7 @@ ApplicationWindow {
         onClosed: {
             countdownTimer.stop()
             countdown = 0
-            win.bridge.holdGestures(false)
+            win.bridge.holdGestures("record", false)
             win.bridge.cancelRecording()
         }
 

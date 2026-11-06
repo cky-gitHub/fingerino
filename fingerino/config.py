@@ -238,6 +238,9 @@ COLOR_ACCENT = (240, 237, 237)      # was a gold accent; now near-white. Marks
                                      # chevrons, the exit progress bar.
 COLOR_OK = (126, 186, 134)          # muted green status dot (live state)
 COLOR_IDLE = (101, 92, 92)          # grey status dot
+# "Try it" in Home: the sign was recognised. Brighter than COLOR_OK on
+# purpose -- it has to read at a glance over live video.
+COLOR_TRIAL = (94, 200, 63)         # green pulse, then frame          #3FC85E
 
 PANEL_ALPHA = 0.80                  # opacity of the flat panels
 SHADOW_ALPHA = 0.28                 # soft drop shadow behind panels
@@ -286,3 +289,8 @@ GESTURE_TUTORIAL = tuple(
 # Feedback timings (seconds).
 CLICK_FLASH_S = 0.16
 TOAST_S = 1.2
+# "Try it": when the sign is recognised the HUD glows green for this long,
+# then keeps a thin green frame until the action editor closes.
+TRIAL_PULSE_S = 1.0
+TRIAL_PULSE_ALPHA = 0.30            # strongest green tint over the video, 0..1
+TRIAL_FRAME_PX = 2                  # the frame's width afterwards (design px)

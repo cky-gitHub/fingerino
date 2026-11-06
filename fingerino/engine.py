@@ -312,6 +312,7 @@ class Session:
                     if trial is not None and recorder is None and trial[0] in out.signs:
                         failed = perform_action(trial[1]) if drive else None
                         overlay.toast(failed or trial[1].toast)
+                        overlay.trial_recognised()
                         if on_sign is not None:
                             on_sign(trial[0])
                     if not quiet:
@@ -385,6 +386,7 @@ class Session:
                     hold_progress=out.hold_progress,
                     sign_progress=out.sign_progress,
                     record_progress=record_progress,
+                    trial=trial is not None,
                 )
                 on_frame(cv2.resize(frame, (out_w, out_h), interpolation=cv2.INTER_AREA))
 

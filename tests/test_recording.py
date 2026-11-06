@@ -339,11 +339,11 @@ def test_the_builtin_note_survives_a_restart(tmp_path):
 
 def test_holding_gestures_reaches_the_session_even_if_it_starts_later(home):
     a, _ = home
-    a.bridge.holdGestures(True)                      # countdown begins, camera still opening
+    a.bridge.holdGestures("record", True)            # countdown begins, camera still opening
     seen = []
     a.session = type("S", (), {"hold_gestures": lambda self, on: seen.append(on),
                                "stop": lambda self: None})()
-    a.bridge.holdGestures(False)
+    a.bridge.holdGestures("record", False)
     assert seen == [False] and a.gestures_held is False
     a.session = None
 

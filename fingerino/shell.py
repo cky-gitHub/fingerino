@@ -322,10 +322,11 @@ class Bridge(QObject):
     def captureSign(self) -> None:
         self._shell.capture_sign()
 
-    @Slot(bool)
-    def holdGestures(self, on: bool) -> None:
-        """True from the countdown until the record dialog closes."""
-        self._shell.hold_gestures(on)
+    @Slot(str, bool)
+    def holdGestures(self, reason: str, on: bool) -> None:
+        """Silence gestures for ``reason`` ("record": countdown until the
+        record dialog closes; "editor": while the action editor is open)."""
+        self._shell.hold_gestures(on, reason)
 
     @Slot()
     def cancelRecording(self) -> None:
@@ -480,7 +481,7 @@ class Shell:
         self.record_progress = 0.0
         self.record_message = ""
         self.record_warning = ""
-        self.gestures_held = False          # see hold_gestures()
+        self._hold_reasons: set[str] = set()    # see hold_gestures()
         self.trial: tuple[str, actions.Action] | None = None   # see start_trial()
         self._recording: signs.Recording | None = None
         self.options = options or Options()
@@ -664,12 +665,25 @@ class Shell:
         self._record_update("capturing")
         self.session.start_recording(config.SIGN_RECORD_S)
 
-    def hold_gestures(self, on: bool) -> None:
-        """Remembered here as well as passed on, so a session that starts
-        during the countdown (the camera is still opening) picks it up."""
-        self.gestures_held = on
+    def hold_gestures(self, on: bool, reason: str = "record") -> None:
+        """Silence gestures while any reason holds them.
+
+        Reasons rather than one flag, because recording hands straight over
+        to the action editor: the record dialog finishing closing must not
+        let go of the hold the editor has just taken. Remembered here as
+        well as passed on, so a session that starts meanwhile (the camera
+        is still opening) picks it up.
+        """
+        if on:
+            self._hold_reasons.add(reason)
+        else:
+            self._hold_reasons.discard(reason)
         if self.session is not None:
-            self.session.hold_gestures(on)
+            self.session.hold_gestures(self.gestures_held)
+
+    @property
+    def gestures_held(self) -> bool:
+        return bool(self._hold_reasons)
 
     def start_trial(self, sign: str, kind: str, target: str, name: str) -> str:
         """Let ``sign`` run this unsaved action, and nothing else act, until
