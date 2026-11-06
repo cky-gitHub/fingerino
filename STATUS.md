@@ -20,7 +20,7 @@ code, and the cursor is an optional module that is off by default.
   4. Sign matcher (`fingerino/sign_matcher.py`), no UI.
   5. Recording signs in Home (`fingerino/signs.py`, `signs.json`): record,
      name, bind, rename, switch off, delete, "Recognised" feedback.
-- **Tests:** 285 pass, 1 skipped, with all dependencies (the dependency-free
+- **Tests:** 291 pass, 1 skipped, with all dependencies (the dependency-free
   job runs fewer). First real-camera check done on Windows, see below.
 
 ## What needs doing next
@@ -47,6 +47,10 @@ code, and the cursor is an optional module that is off by default.
      pushed the fields past its edge. Now Try it, a "⋯" menu (Reset to
      original, Do nothing), Cancel and Save; the column is capped to the
      dialog's width.
+   - "Try it" in the action editor now arms a trial: making the sign runs
+     the unsaved action and nothing else acts until the editor closes
+     (`Session.set_trial`, `Shell.start_trial`). It used to run the action
+     once from Home, which didn't show whether the sign triggers it.
    - PASS: crossed-fingers Exit stopped tracking on the real camera.
    - New setting: "Show the hand skeleton" (settings.json `skeleton`, off by
      default), always drawn while recording a sign.

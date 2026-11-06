@@ -122,6 +122,10 @@ class Session:
         # dialog: gestures do nothing meanwhile, since the hand is busy
         # showing the new sign and must not fire the old ones.
         self._held = threading.Event()
+        # Set by Home's "Try it": (sign id, unsaved action). While set, that
+        # sign runs that action and every other gesture is silent, until the
+        # editor closes. Swapped whole, so the loop never sees half of it.
+        self._trial: tuple[str, Action] | None = None
 
     # -- called from other threads -----------------------------------------
 
@@ -140,6 +144,11 @@ class Session:
             self._held.set()
         else:
             self._held.clear()
+
+    def set_trial(self, trial: tuple[str, Action] | None) -> None:
+        """Try an unsaved action on one sign (None ends the trial). Exit and
+        button release stay live, as they do while recording."""
+        self._trial = trial
 
     def start_recording(self, seconds: float) -> None:
         """Record a new sign's samples, starting on the next frame. The
@@ -252,8 +261,9 @@ class Session:
                 # countdown to the end of the dialog -- including the frame
                 # a request is still waiting to be picked up. Exit and
                 # button release are exempt: see below.
+                trial = self._trial
                 quiet = (recorder is not None or self._held.is_set()
-                         or self._record_request is not None)
+                         or self._record_request is not None or trial is not None)
 
                 # The master switch. Turning the pause *off* is never gated on
                 # the row's own toggle -- switching Hold off while paused would
@@ -296,6 +306,14 @@ class Session:
                     # keyed by the sign's own id. Nothing fires while a new
                     # sign is being recorded: the hand is busy showing it.
                     fired = registry.resolve(out, _live)
+                    # "Try it": only the sign being edited acts, with the
+                    # action as it stands in the editor. Its own on/off
+                    # switch and the pause don't apply -- the user asked.
+                    if trial is not None and recorder is None and trial[0] in out.signs:
+                        failed = perform_action(trial[1]) if drive else None
+                        overlay.toast(failed or trial[1].toast)
+                        if on_sign is not None:
+                            on_sign(trial[0])
                     if not quiet:
                         for action in fired:
                             failed = perform_action(action) if drive else None

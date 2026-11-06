@@ -169,6 +169,7 @@ ApplicationWindow {
             target = info.target
             nameField.text = info.name
             message.text = ""
+            trialHint.text = ""
             kindBox.currentIndex = kindBox.indexOfValue(kind)
             builtinBox.currentIndex = Math.max(0, builtinBox.indexOfValue(target))
             mediaBox.currentIndex = Math.max(0, mediaBox.indexOfValue(target))
@@ -176,6 +177,17 @@ ApplicationWindow {
             pathField.text = (kind === "open_app" || kind === "open") ? target : ""
             commandField.text = kind === "command" ? target : ""
             open()
+        }
+
+        // "Try it" lasts until the editor closes, however it closes.
+        onClosed: win.bridge.endTrial()
+
+        Connections {
+            target: win.bridge
+            function onSignFired(id) {
+                if (actionEditor.opened && trialHint.text !== "" && id === actionEditor.sign)
+                    trialHint.text = "✓ Recognised. That's what it will do. Save to keep it."
+            }
         }
 
         function currentTarget() {
@@ -297,6 +309,14 @@ ApplicationWindow {
                 Accessible.name: "Name on screen"
             }
             Label {
+                id: trialHint
+                visible: text !== ""
+                Layout.fillWidth: true
+                wrapMode: Text.WordWrap
+                font.pixelSize: 12
+                opacity: 0.85
+            }
+            Label {
                 id: message
                 visible: text !== ""
                 Layout.fillWidth: true
@@ -312,8 +332,17 @@ ApplicationWindow {
                 spacing: 8
                 Button {
                     text: "Try it"
-                    onClicked: message.text = win.bridge.testAction(
-                        actionEditor.kind, actionEditor.currentTarget(), nameField.text)
+                    ToolTip.visible: hovered
+                    ToolTip.delay: 400
+                    ToolTip.text: "Make the sign to run this action. Other gestures pause until you close this."
+                    onClicked: {
+                        var err = win.bridge.tryAction(actionEditor.sign, actionEditor.kind,
+                                                       actionEditor.currentTarget(), nameField.text)
+                        message.text = err
+                        trialHint.text = err !== "" ? ""
+                            : "Make the sign now. Only this sign works, with this action, "
+                              + "until you save or cancel."
+                    }
                 }
                 ToolButton {
                     id: editorMore

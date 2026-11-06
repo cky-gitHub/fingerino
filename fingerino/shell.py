@@ -391,17 +391,14 @@ class Bridge(QObject):
         self._shell.registry.reset(sign)
         self._bindings_edited()
 
-    @Slot(str, str, str, result=str)
-    def testAction(self, kind: str, target: str, name: str) -> str:
-        """Run an action once, now, from Home; an error message or ""."""
-        made = actions.make_action(kind, target, name)
-        if isinstance(made, str):
-            return made
-        try:
-            system_actions.perform(made)
-        except Exception as exc:
-            return f"That didn't work: {exc}"
-        return ""
+    @Slot(str, str, str, str, result=str)
+    def tryAction(self, sign: str, kind: str, target: str, name: str) -> str:
+        """Arm "Try it": an error message, or "" once the sign is live."""
+        return self._shell.start_trial(sign, kind, target, name)
+
+    @Slot()
+    def endTrial(self) -> None:
+        self._shell.end_trial()
 
     @Slot(int, int, result=str)
     def comboFromKey(self, key: int, modifiers: int) -> str:
@@ -484,6 +481,7 @@ class Shell:
         self.record_message = ""
         self.record_warning = ""
         self.gestures_held = False          # see hold_gestures()
+        self.trial: tuple[str, actions.Action] | None = None   # see start_trial()
         self._recording: signs.Recording | None = None
         self.options = options or Options()
         self._on_crash = on_crash
@@ -607,6 +605,7 @@ class Shell:
         session = Session(self.options, self.prefs, self.registry, self.library)
         self.session = session
         session.hold_gestures(self.gestures_held)
+        session.set_trial(self.trial)
         self.paused = False
         self.hand_seen = False
         self.error = ""
@@ -671,6 +670,25 @@ class Shell:
         self.gestures_held = on
         if self.session is not None:
             self.session.hold_gestures(on)
+
+    def start_trial(self, sign: str, kind: str, target: str, name: str) -> str:
+        """Let ``sign`` run this unsaved action, and nothing else act, until
+        end_trial(). Starts tracking if it is off, since trying needs the
+        camera. Returns an error message, or ""."""
+        made = actions.make_action(kind, target, name)
+        if isinstance(made, str):
+            return made
+        self.trial = (sign, made)
+        if self.session is None:
+            self.start()                 # passes the trial on
+        else:
+            self.session.set_trial(self.trial)
+        return ""
+
+    def end_trial(self) -> None:
+        self.trial = None
+        if self.session is not None:
+            self.session.set_trial(None)
 
     def reset_recording(self) -> None:
         self._recording = None
