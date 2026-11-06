@@ -6,7 +6,7 @@ and run window shortcuts with a wave — no extra hardware, just your laptop's
 built-in camera.
 
 ![python](https://img.shields.io/badge/python-3.10%2B-blue)
-![license](https://img.shields.io/badge/license-MIT-green)
+![license](https://img.shields.io/badge/license-FCL--1.0--MIT-blue)
 ![platform](https://img.shields.io/badge/platform-Windows%20%C2%B7%20macOS%20%C2%B7%20Linux-lightgrey)
 
 Built on MediaPipe's `HandLandmarker` (live-stream, two hands), OpenCV for
@@ -450,4 +450,17 @@ who aren't going to read instructions, signing is what fixes that:
 
 ## License
 
-[MIT](LICENSE) © cky
+Fingerino is **source-available** under the [Fair Core License, version 1.0,
+with MIT as the future license](LICENSE) (FCL-1.0-MIT), © cky.
+
+In short, and the [LICENSE](LICENSE) is what counts:
+
+- You may read, use, change and share the code, for yourself or inside your
+  company, and for non-commercial teaching and research.
+- You may not use it to offer a product or service that competes with
+  Fingerino, and you may not remove or get around its licence-key checks.
+- Each version becomes plain MIT two years after it is released.
+
+Versions up to and including **v0.2.0** were released under the
+[MIT License](https://github.com/cky-gitHub/fingerino/blob/v0.2.0/LICENSE) and
+stay MIT. Fingerino Premium is a separate, closed add-on.

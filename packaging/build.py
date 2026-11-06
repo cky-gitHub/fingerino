@@ -269,8 +269,8 @@ Then hold a hand in front of the camera, inside the rectangle drawn on
 the video. Thumb moves the cursor, Tab lists every gesture, Esc quits.
 
 Why the warning in step 2: this app is not signed with an Apple Developer
-certificate, which costs $99 a year. It is open source — you can read every
-line at https://github.com/cky-gitHub/fingerino. Video is processed on your
+certificate, which costs $99 a year. Its source is public — you can read
+every line at https://github.com/cky-gitHub/fingerino. Video is processed on your
 Mac and never leaves it.
 
 Still blocked after step 3? Open Terminal and run:

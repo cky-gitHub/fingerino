@@ -140,6 +140,14 @@ code, and the cursor is an optional module that is off by default.
 - Commands only run when approved; anything typed in Home is approved.
   Opening apps, files and links never goes through a shell.
 - Still open: Exit doesn't work while paused (unchanged from v0.2.0).
+- Licence (2026-11-06): source-available under FCL-1.0-MIT from the next
+  release (branch `license-fcl`); v0.1.0 and v0.2.0 stay MIT. Open core:
+  this repo stays public, paid features live in the private repo
+  `cky-gitHub/fingerino_premium` and ship in the same official build behind
+  an offline-checked licence key. Replaces the earlier "custom signs are
+  free" decision: free gets a small number of custom signs (1 to 3, to be
+  decided), Premium about 20. The limit is licence-key functionality, which
+  FCL forbids circumventing.
 
 ## Keep intact
 
