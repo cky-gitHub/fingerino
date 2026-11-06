@@ -43,6 +43,10 @@ code, and the cursor is an optional module that is off by default.
      bare name `signName` resolved to the record dialog's text field id
      (ids win over properties), so the assignment threw. Fixed and covered
      by a test that drives the real dialog and fails on any QML error.
+   - The action editor's five-button row was wider than the dialog and
+     pushed the fields past its edge. Now Try it, a "⋯" menu (Reset to
+     original, Do nothing), Cancel and Save; the column is capped to the
+     dialog's width.
    - PASS: crossed-fingers Exit stopped tracking on the real camera.
    - New setting: "Show the hand skeleton" (settings.json `skeleton`, off by
      default), always drawn while recording a sign.

@@ -151,6 +151,7 @@ ApplicationWindow {
     // field, try it, save. Saving applies at once, even while tracking.
     Dialog {
         id: actionEditor
+        objectName: "actionEditor"
         property string sign
         property string kind: "builtin"
         property string target: ""
@@ -201,7 +202,9 @@ ApplicationWindow {
         }
 
         ColumnLayout {
-            anchors.fill: parent
+            // The dialog's width, never the content's: a wide row wraps or
+            // clips inside rather than pushing everything past the edge.
+            width: actionEditor.availableWidth
             spacing: 10
 
             Label {
@@ -301,6 +304,8 @@ ApplicationWindow {
                 font.pixelSize: 12
                 color: "#f85149"
             }
+            // Four controls, not six: the rarer choices sit in a menu so the
+            // row fits the dialog (five buttons ran past its right edge).
             RowLayout {
                 Layout.fillWidth: true
                 Layout.topMargin: 8
@@ -310,14 +315,33 @@ ApplicationWindow {
                     onClicked: message.text = win.bridge.testAction(
                         actionEditor.kind, actionEditor.currentTarget(), nameField.text)
                 }
-                Button {
-                    text: "Reset"
-                    Accessible.name: "Reset to what this sign did originally"
-                    onClicked: { win.bridge.resetAction(actionEditor.sign); actionEditor.close() }
-                }
-                Button {
-                    text: "Do nothing"
-                    onClicked: { win.bridge.clearAction(actionEditor.sign); actionEditor.close() }
+                ToolButton {
+                    id: editorMore
+                    text: "⋯"
+                    font.pixelSize: 20
+                    flat: true
+                    Accessible.name: "More choices"
+                    ToolTip.visible: hovered
+                    ToolTip.delay: 400
+                    ToolTip.text: "Reset or do nothing"
+                    onClicked: editorMenu.popup(editorMore, 0, editorMore.height)
+                    Menu {
+                        id: editorMenu
+                        MenuItem {
+                            text: "Reset to original"
+                            onTriggered: {
+                                win.bridge.resetAction(actionEditor.sign)
+                                actionEditor.close()
+                            }
+                        }
+                        MenuItem {
+                            text: "Do nothing"
+                            onTriggered: {
+                                win.bridge.clearAction(actionEditor.sign)
+                                actionEditor.close()
+                            }
+                        }
+                    }
                 }
                 Item { Layout.fillWidth: true }
                 Button {
@@ -345,6 +369,7 @@ ApplicationWindow {
 
     Dialog {
         id: recordDialog
+        objectName: "recordDialog"
         property int countdown: 0
         readonly property string phase: countdown > 0 ? "countdown"
             : win.bridge.recordState === "idle" ? "intro" : win.bridge.recordState
