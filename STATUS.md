@@ -20,7 +20,7 @@ code, and the cursor is an optional module that is off by default.
   4. Sign matcher (`fingerino/sign_matcher.py`), no UI.
   5. Recording signs in Home (`fingerino/signs.py`, `signs.json`): record,
      name, bind, rename, switch off, delete, "Recognised" feedback.
-- **Tests:** 296 pass, 1 skipped, with all dependencies (the dependency-free
+- **Tests:** 295 pass, 1 skipped, with all dependencies (the dependency-free
   job runs fewer). First real-camera check done on Windows, see below.
 
 ## What needs doing next
