@@ -134,6 +134,14 @@ code, and the cursor is an optional module that is off by default.
 - Commands only run when approved; anything typed in Home is approved.
   Opening apps, files and links never goes through a shell.
 - Still open: Exit doesn't work while paused (unchanged from v0.2.0).
+- MediaPipe telemetry (found 2026-11-07): Google's PyPI builds from 0.10.35
+  on contain a "Clearcut" telemetry uploader to play.googleapis.com with no
+  off switch (google-ai-edge/mediapipe#6291; maintainer: "We are not adding
+  an official API to disable this"). The published v0.1.0 and v0.2.0
+  installers bundle 0.10.35, so they break the README's no-network promise.
+  Pinned to <=0.10.33 (verified: no uploader in its wheels), guarded by
+  tests/test_no_telemetry.py. Needs a camera check on 0.10.33 and a hotfix
+  release.
 - Licence (2026-11-06): source-available under FCL-1.0-MIT from the next
   release (branch `license-fcl`); v0.1.0 and v0.2.0 stay MIT. Open core:
   this repo stays public, paid features live in the private repo
@@ -148,7 +156,7 @@ code, and the cursor is an optional module that is off by default.
 README privacy promises (video stays in memory, nothing recorded or
 uploaded, no telemetry, the model download is the only network request);
 every file Fingerino writes listed in the README; the single button-release
-path, `DRAG_MAX_S`, held confirmation, Hold and Exit; the `mediapipe<1.0` pin;
+path, `DRAG_MAX_S`, held confirmation, Hold and Exit; the `mediapipe<=0.10.33` pin (no telemetry; see below);
 thresholds in `config.py`; ruff, mypy and pytest passing; Windows and macOS
 support without breaking the Linux source install.
 
