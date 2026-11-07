@@ -965,7 +965,6 @@ ApplicationWindow {
                             title: modelData.name
                             description: (recognised ? "✓ Recognised just now · " : "")
                                 + modelData.action
-                            image: win.dark ? modelData.image : modelData.imageLight
                             Connections {
                                 target: win.bridge
                                 function onSignFired(id) {
@@ -1178,6 +1177,28 @@ ApplicationWindow {
                             text: "Change…"
                             Accessible.name: "Change the pause shortcut"
                             onClicked: hotkeyDialog.ask()
+                        }
+                    }
+                }
+
+                SectionHeader { text: "Appearance" }
+                Group {
+                    Card {
+                        title: "Theme"
+                        description: "Light or dark, or the same as Windows."
+                        ComboBox {
+                            objectName: "themeBox"
+                            model: [
+                                { value: "system", text: "Use system setting" },
+                                { value: "light", text: "Light" },
+                                { value: "dark", text: "Dark" }
+                            ]
+                            textRole: "text"
+                            valueRole: "value"
+                            implicitWidth: 200
+                            currentIndex: indexOfValue(win.bridge.theme)
+                            onActivated: win.bridge.setTheme(currentValue)
+                            Accessible.name: "Theme"
                         }
                     }
                 }

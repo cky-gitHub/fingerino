@@ -216,9 +216,7 @@ def test_record_name_bind_and_delete(home):
     assert a.bridge.setAction(sign_id, "open", "https://open.spotify.com/x", "") == ""
     (card,) = a.bridge.property("customSigns")
     assert card == {"id": sign_id, "name": "Thumbs up", "enabled": True,
-                    "action": "Open spotify.com", "warning": "",
-                    "image": f"image://signs/{sign_id}/dark",
-                    "imageLight": f"image://signs/{sign_id}/light"}
+                    "action": "Open spotify.com", "warning": ""}
     # The matcher the session reads already knows it.
     assert a.library.matcher.match(thumbs_up(), "Right").sign_id == sign_id
 

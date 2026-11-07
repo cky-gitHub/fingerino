@@ -97,8 +97,8 @@ code, and the cursor is an optional module that is off by default.
    per section; type follows Windows' Text size (`shell.text_scale`);
    ellipses on buttons that open dialogs; editable pause shortcut; Quit on
    Home; "Make your own sign" card on Home and own signs first on Gestures;
-   custom-sign pictures drawn from their recorded hand (`SignPictures`
-   image provider). Not done, by decision: the warning badge's keyboard
+   a Theme setting (system / light / dark). Rule: only built-in signs have a
+   picture; custom signs have none (tried skeleton drawings, dropped). Not done, by decision: the warning badge's keyboard
    access (finding 5). Waiting on artwork: crossed-fingers and swipe-right
    pictures, and SVG versions of all drawings that read in light mode
    (the PNG strokes are 2.85:1 on light cards). macOS title case and an app

@@ -30,6 +30,9 @@ def _default_gestures() -> dict[str, bool]:
     return {icon: True for icon, _ in config.GESTURE_TUTORIAL}
 
 
+THEMES = ("system", "light", "dark")
+
+
 @dataclass
 class Settings:
     # Per-gesture on/off, keyed by the icon id used throughout
@@ -50,12 +53,14 @@ class Settings:
     # Off by default; always drawn while a new sign is being recorded, so
     # the user can see what Fingerino sees. --debug also turns it on.
     skeleton: bool = False
+    # Home's appearance: "system" follows Windows, or "light" / "dark".
+    theme: str = "system"
 
     def to_json(self) -> dict:
         return {"schema": SCHEMA, "gestures": dict(self.gestures),
                 "onboarded": self.onboarded, "start_on_open": self.start_on_open,
                 "hotkey": self.hotkey, "cursor": self.cursor,
-                "skeleton": self.skeleton}
+                "skeleton": self.skeleton, "theme": self.theme}
 
     @classmethod
     def from_json(cls, data: object) -> Settings:
@@ -82,6 +87,8 @@ class Settings:
             s.cursor = data["cursor"]
         if isinstance(data.get("skeleton"), bool):
             s.skeleton = data["skeleton"]
+        if data.get("theme") in THEMES:
+            s.theme = data["theme"]
         if isinstance(data.get("hotkey"), str) and data["hotkey"].strip():
             s.hotkey = data["hotkey"]
         return s

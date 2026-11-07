@@ -23,7 +23,6 @@ import numpy as np
 from PySide6.QtCore import (
     Property,
     QObject,
-    QPointF,
     QSize,
     Qt,
     QTimer,
@@ -33,16 +32,13 @@ from PySide6.QtCore import (
 )
 from PySide6.QtGui import (
     QAction,
-    QColor,
     QDesktopServices,
     QIcon,
     QImage,
-    QPainter,
-    QPen,
 )
 from PySide6.QtNetwork import QLocalServer, QLocalSocket
 from PySide6.QtQml import QQmlApplicationEngine
-from PySide6.QtQuick import QQuickImageProvider, QQuickWindow
+from PySide6.QtQuick import QQuickWindow
 from PySide6.QtQuickControls2 import QQuickStyle
 from PySide6.QtWidgets import QApplication, QMenu, QSystemTrayIcon
 
@@ -93,61 +89,6 @@ def text_scale() -> float:
 def to_pynput(combo: str) -> str:
     """``"ctrl+alt+f"`` -> ``"<ctrl>+<alt>+f"``, the form GlobalHotKeys reads."""
     return "+".join(p if len(p) == 1 else f"<{p}>" for p in combo.split("+"))
-
-
-_HAND_LINES = (
-    (0, 1), (1, 2), (2, 3), (3, 4), (0, 5), (5, 6), (6, 7), (7, 8),
-    (5, 9), (9, 10), (10, 11), (11, 12), (9, 13), (13, 14), (14, 15), (15, 16),
-    (13, 17), (17, 18), (18, 19), (19, 20), (0, 17),
-)
-
-# Stroke colours for custom-sign pictures: the built-in drawings' blue on
-# dark, and a darker blue that keeps 4.5:1 on Windows' light surfaces.
-SIGN_PICTURE_COLORS = {"dark": "#6c9cbd", "light": "#2f5f80"}
-
-
-def sign_picture(sample: list, color: str, size: int = 96) -> QImage:
-    """A line drawing of one recorded sample.
-
-    Drawn from the hand Fingerino learned, in the stroke style of the
-    built-in pictures, so a custom sign's row shows what will be matched.
-    """
-    xs = [p[0] for p in sample]
-    ys = [p[1] for p in sample]
-    span = max(max(xs) - min(xs), max(ys) - min(ys), 1e-6)
-    margin = size * 0.12
-    k = (size - 2 * margin) / span
-    ox = (size - (max(xs) - min(xs)) * k) / 2 - min(xs) * k
-    oy = (size - (max(ys) - min(ys)) * k) / 2 - min(ys) * k
-    pts = [(ox + x * k, oy + y * k) for x, y in zip(xs, ys, strict=True)]
-
-    img = QImage(size, size, QImage.Format.Format_ARGB32_Premultiplied)
-    img.fill(Qt.GlobalColor.transparent)
-    painter = QPainter(img)
-    painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-    pen = QPen(QColor(color), size / 40)
-    pen.setCapStyle(Qt.PenCapStyle.RoundCap)
-    pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
-    painter.setPen(pen)
-    for a, b in _HAND_LINES:
-        painter.drawLine(QPointF(*pts[a]), QPointF(*pts[b]))
-    painter.end()
-    return img
-
-
-class SignPictures(QQuickImageProvider):
-    """Serves ``image://signs/<sign id>/<dark|light>`` to Home's QML."""
-
-    def __init__(self, shell: Shell) -> None:
-        super().__init__(QQuickImageProvider.ImageType.Image)
-        self._shell = shell
-
-    def requestImage(self, image_id: str, size: QSize, requested: QSize) -> QImage:
-        sign_id, _, theme = image_id.partition("/")
-        sign = self._shell.library.get(sign_id)
-        if sign is None or not sign.samples:
-            return QImage()
-        return self._shell.sign_picture(sign, theme if theme in SIGN_PICTURE_COLORS else "dark")
 
 
 def hotkey_label(combo: str) -> str:
@@ -310,6 +251,11 @@ class Bridge(QObject):
     startOnOpen = Property(bool, _start_on_open, notify=settingsChanged)
     showSkeleton = Property(bool, _skeleton, notify=settingsChanged)
 
+    def _theme(self) -> str:
+        return self._shell.prefs.theme
+
+    theme = Property(str, _theme, notify=settingsChanged)
+
     # -- constants --------------------------------------------------------------
 
     def _groups_(self) -> list:
@@ -398,9 +344,7 @@ class Bridge(QObject):
         lib, cursor = self._shell.library, self._shell.prefs.cursor
         return [{"id": s.id, "name": s.name, "enabled": s.enabled,
                  "action": actions.describe(reg.action_for(s.id))["label"],
-                 "warning": lib.warning(s.id, cursor),
-                 "image": f"image://signs/{s.id}/dark",
-                 "imageLight": f"image://signs/{s.id}/light"}
+                 "warning": lib.warning(s.id, cursor)}
                 for s in lib.signs]
 
     def _record_state(self) -> str:
@@ -528,6 +472,14 @@ class Bridge(QObject):
     def comboLabel(self, combo: str) -> str:
         return actions.combo_label(combo) if combo else ""
 
+    @Slot(str)
+    def setTheme(self, theme: str) -> None:
+        if theme in settings.THEMES:
+            self._shell.prefs.theme = theme
+            self._shell.save()
+            self._shell.apply_theme()
+            self.settingsChanged.emit()
+
     @Slot(bool)
     def setShowSkeleton(self, on: bool) -> None:
         self._shell.prefs.skeleton = on
@@ -599,7 +551,6 @@ class Shell:
         self.record_message = ""
         self.record_warning = ""
         self.text_scale = text_scale()
-        self._pictures: dict[tuple[str, int, str], QImage] = {}
         self._hold_reasons: set[str] = set()    # see hold_gestures()
         self.trial: tuple[str, actions.Action] | None = None   # see start_trial()
         self._recording: signs.Recording | None = None
@@ -629,8 +580,8 @@ class Shell:
         self.app.setWindowIcon(icon)
 
         self.bridge = Bridge(self)
+        self.apply_theme()
         self.engine = QQmlApplicationEngine()
-        self.engine.addImageProvider("signs", SignPictures(self))
         self.engine.setInitialProperties({"bridge": self.bridge})
         self.engine.load(QUrl.fromLocalFile(str(_QML)))
         roots = self.engine.rootObjects()
@@ -786,13 +737,16 @@ class Shell:
         self._record_update("capturing")
         self.session.start_recording(config.SIGN_RECORD_S)
 
-    def sign_picture(self, sign: signs.Sign, theme: str) -> QImage:
-        """The row picture for a custom sign, cached per sign and samples."""
-        key = (sign.id, id(sign.samples), theme)
-        if key not in self._pictures:
-            sample = sign.samples[len(sign.samples) // 2]
-            self._pictures[key] = sign_picture(sample, SIGN_PICTURE_COLORS[theme])
-        return self._pictures[key]
+    def apply_theme(self) -> None:
+        """Light, dark, or whatever Windows is set to. Fluent follows the
+        application's colour scheme live, so this applies at once."""
+        hints = self.app.styleHints()
+        if self.prefs.theme == "light":
+            hints.setColorScheme(Qt.ColorScheme.Light)
+        elif self.prefs.theme == "dark":
+            hints.setColorScheme(Qt.ColorScheme.Dark)
+        else:
+            hints.unsetColorScheme()
 
     def set_hotkey(self, combo: str) -> str:
         """Listen for ``combo`` (``"ctrl+alt+f"``) instead of the current

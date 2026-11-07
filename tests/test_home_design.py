@@ -88,26 +88,6 @@ def test_text_scale_reads_windows_text_size(monkeypatch):
     assert shell.text_scale() == 1.0
 
 
-def test_custom_sign_pictures_keep_the_hands_orientation():
-    pytest.importorskip("PySide6")
-    from landmarks import peace, thumbs_down, thumbs_up
-    from PySide6.QtWidgets import QApplication
-
-    from fingerino import config, shell
-    from fingerino.sign_matcher import canonical
-    QApplication.instance() or QApplication([])
-    aspect = config.CAMERA_WIDTH / config.CAMERA_HEIGHT
-
-    def picture(make):
-        lms = [(0.5 + (x - 0.5) / aspect, y, z) for x, y, z in make()]
-        img = shell.sign_picture(canonical(lms, "Right"), "#6c9cbd")
-        assert not img.isNull() and img.width() == 96
-        return img
-
-    up, down, two = picture(thumbs_up), picture(thumbs_down), picture(peace)
-    assert up != down and up != two
-
-
 # ---------------------------------------------------------------------------
 # Home, through the bridge and the real QML
 # ---------------------------------------------------------------------------
@@ -174,7 +154,7 @@ def test_a_shortcut_that_cant_be_used_keeps_the_old_one(home, monkeypatch):
     assert a.prefs.hotkey == before
 
 
-def test_custom_signs_get_a_picture_for_each_theme(home):
+def test_only_built_in_signs_have_a_picture(home):
     import random
 
     from landmarks import recording, thumbs_up
@@ -184,14 +164,27 @@ def test_custom_signs_get_a_picture_for_each_theme(home):
     rec = signs.Recorder(0.0, config.SIGN_RECORD_S, False)
     for lms in recording(thumbs_up, random.Random(1), n=40):
         rec.add(lms, "Right")
-    sign = a.library.add("Up", rec.result().samples)
+    a.library.add("Up", rec.result().samples)
     (card,) = a.bridge.property("customSigns")
-    assert card["image"] == f"image://signs/{sign.id}/dark"
-    from PySide6.QtCore import QSize
+    assert "image" not in card
+    rows = {r["icon"]: r for g in a.bridge.property("groups") for r in g["rows"]}
+    assert rows["shaka"]["image"]
 
-    from fingerino.shell import SignPictures
-    provider = SignPictures(a)
-    dark = provider.requestImage(f"{sign.id}/dark", QSize(), QSize())
-    light = provider.requestImage(f"{sign.id}/light", QSize(), QSize())
-    assert not dark.isNull() and not light.isNull() and dark != light
-    assert provider.requestImage("sign-missing/dark", QSize(), QSize()).isNull()
+
+def test_theme_setting(home, tmp_path):
+    from PySide6.QtCore import Qt
+
+    from fingerino import settings
+    a = home
+    hints = a.app.styleHints()
+    assert a.bridge.property("theme") == "system"
+    a.bridge.setTheme("light")
+    assert hints.colorScheme() == Qt.ColorScheme.Light
+    assert a.prefs.theme == "light"
+    a.bridge.setTheme("dark")
+    assert hints.colorScheme() == Qt.ColorScheme.Dark
+    a.bridge.setTheme("purple")                          # ignored
+    assert a.prefs.theme == "dark"
+    a.bridge.setTheme("system")
+    assert settings.Settings.from_json({"theme": "nope"}).theme == "system"
+    assert settings.Settings.from_json(settings.Settings(theme="light").to_json()).theme == "light"
