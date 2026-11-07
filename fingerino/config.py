@@ -184,8 +184,11 @@ PREMIUM_CUSTOM_SIGNS = 20
 TRIAL_DAYS = 14                     # Premium trial from a new install's first launch
 # How often a running Fingerino checks whether the trial has ended.
 PREMIUM_RECHECK_S = 3600
-# Opened in the browser by "Get Premium"; Fingerino itself requests nothing.
-PREMIUM_URL = "https://github.com/cky-gitHub/fingerino#premium"
+# The shop's checkout page, opened in the browser by "Get Premium" (Fingerino
+# itself requests nothing). Empty until the shop opens: then Premium is
+# "Coming soon", every sign is unlocked for everyone and no trial starts.
+# Setting it, in a release, is all it takes to open sales.
+PREMIUM_URL = ""
 
 # ---------------------------------------------------------------------------
 # Hold gesture: both palms up and still -> pause / resume every other gesture

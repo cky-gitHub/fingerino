@@ -125,21 +125,21 @@ two-handed wave can't pause you by accident.
 
 ## Premium
 
-Fingerino is free, with every built-in sign and one sign of your own switched
-on at a time. **Premium** adds:
+**Coming soon.** Until Premium goes on sale, everything is unlocked for
+everyone. After that:
 
-- up to 20 of your own signs switched on at once;
-- holding a key while you hold a sign, so a sign can hold Wispr Flow's
-  dictation key (coming in the next version).
+- **Free:** every built-in sign, and one sign of your own switched on at a
+  time.
+- **Premium:** up to 20 of your own signs switched on at once, and holding a
+  key while you hold a sign, so a sign can hold Wispr Flow's dictation key.
 
-A new install gets **14 days of Premium** to try it. When the trial ends,
-nothing is deleted: your extra signs stay, switched off, and you choose which
-one stays on (Gestures › "Use this one instead").
+Every install gets **14 days of Premium** to try it once it is on sale. When
+the trial ends, nothing is deleted: your extra signs stay, switched off, and
+you choose which one stays on (Gestures › "Use this one instead").
 
-Premium is a one-time purchase, unlocked with a licence key you paste into
-Settings › Premium. The key is checked on your computer; Fingerino never goes
-online for it (see [Privacy](#privacy)). Premium isn't on sale yet; this
-section will say where to buy it when it is.
+Premium will be a one-time purchase, unlocked with a licence key you paste
+into Settings › Premium. The key is checked on your computer; Fingerino never
+goes online for it (see [Privacy](#privacy)).
 
 ## Download
 

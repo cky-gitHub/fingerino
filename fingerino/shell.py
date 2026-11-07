@@ -453,6 +453,12 @@ class Bridge(QObject):
     def _addon_note(self) -> str:
         return self._shell.addon.note
 
+    def _on_sale(self) -> bool:
+        return licence.on_sale()
+
+    def _trial_days(self) -> int:
+        return config.TRIAL_DAYS
+
     premiumPlan = Property(str, _premium_plan, notify=premiumChanged)  # premium/trial/free
     trialDaysLeft = Property(int, _trial_days_left, notify=premiumChanged)
     licensedTo = Property(str, _licensed_to, notify=premiumChanged)
@@ -460,6 +466,8 @@ class Bridge(QObject):
     freeSignLimit = Property(int, _free_sign_limit, constant=True)
     premiumSignLimit = Property(int, _premium_sign_limit, constant=True)
     addonNote = Property(str, _addon_note, constant=True)
+    onSale = Property(bool, _on_sale, constant=True)        # else "Coming soon"
+    trialDays = Property(int, _trial_days, constant=True)
 
     @Slot(str, result=str)
     def enterLicence(self, text: str) -> str:
@@ -473,7 +481,8 @@ class Bridge(QObject):
     @Slot()
     def openPremium(self) -> None:
         # The browser opens the page; Fingerino itself requests nothing.
-        QDesktopServices.openUrl(QUrl(config.PREMIUM_URL))
+        if licence.on_sale():
+            QDesktopServices.openUrl(QUrl(config.PREMIUM_URL))
 
     # -- what signs do -----------------------------------------------------------
 
@@ -618,7 +627,8 @@ class Shell:
         # Premium: a licence key, or the trial, lifts the sign limit and
         # unlocks the add-on's features (licence.py, addons.py).
         self.licence = licence.load(data_dir)
-        self.premium = licence.status(self.licence, prefs.trial_started, date.today())
+        self.premium = licence.status(self.licence, prefs.trial_started, date.today(),
+                                      licence.on_sale())
         self.library.set_limit(self.premium.sign_limit)
         self.addon = addons.load(addons.Host(__version__, self.entitled))
         # Recording a new sign: see capture_sign().
@@ -991,7 +1001,8 @@ class Shell:
     def refresh_premium(self, today: date | None = None) -> None:
         """Work out the plan again (a key entered or removed, a day passed)
         and apply its sign limit. Quiet when nothing changed."""
-        new = licence.status(self.licence, self.prefs.trial_started, today or date.today())
+        new = licence.status(self.licence, self.prefs.trial_started, today or date.today(),
+                             licence.on_sale())
         if new == self.premium:
             return
         self.premium = new

@@ -184,6 +184,19 @@ def test_the_plan():
     assert free.sign_limit == config.FREE_CUSTOM_SIGNS == 1
 
 
+def test_before_the_shop_opens_nobody_is_limited(monkeypatch):
+    over = (TODAY - dt.timedelta(days=30)).isoformat()
+    soon = licence.status(None, over, TODAY, selling=False)
+    assert (soon.plan, soon.premium, soon.sign_limit) == ("soon", True, 20)
+    # A key still counts, so a dry run shows what buyers will see.
+    key = licence.Licence("1", "a@example.com", "2026-11-07")
+    assert licence.status(key, over, TODAY, selling=False).plan == "premium"
+    monkeypatch.setattr(config, "PREMIUM_URL", "")
+    assert not licence.on_sale()
+    monkeypatch.setattr(config, "PREMIUM_URL", "https://shop.example/checkout")
+    assert licence.on_sale()
+
+
 def test_the_trial_start_is_kept_in_settings():
     s = settings.Settings(trial_started="2026-11-07")
     assert settings.Settings.from_json(s.to_json()).trial_started == "2026-11-07"

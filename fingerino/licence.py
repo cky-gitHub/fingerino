@@ -15,8 +15,12 @@ it (README, "Privacy"). The flip side is that a key can't be revoked; it
 carries the buyer's email so a shared key can be traced. Keys don't expire:
 Premium is a one-time purchase.
 
-The trial needs no key: a new install gets ``config.TRIAL_DAYS`` of Premium
-from its first launch, remembered in settings.json. Deleting that file starts
+Until the shop opens (``config.PREMIUM_URL`` empty), Premium is "coming
+soon": everything is unlocked for everyone and no trial starts.
+
+The trial needs no key: once Premium is on sale, an install gets
+``config.TRIAL_DAYS`` of Premium from its first launch of such a version,
+remembered in settings.json. Deleting that file starts
 a new trial, which was accepted when the free tier was decided.
 
 Under FCL-1.0-MIT this check is licence-key functionality that may not be
@@ -136,15 +140,20 @@ def public_key_for(private_key: bytes) -> bytes:
 # ---------------------------------------------------------------------------
 # What the user has: Premium, the trial, or the free version
 # ---------------------------------------------------------------------------
+def on_sale() -> bool:
+    """Premium can be bought: the shop is open."""
+    return bool(config.PREMIUM_URL)
+
+
 @dataclass(frozen=True)
 class Status:
-    plan: str                       # "premium", "trial" or "free"
+    plan: str                       # "premium", "trial", "free", or "soon" (not on sale yet)
     days_left: int = 0              # of the trial; 0 otherwise
     email: str = ""                 # who the key was sold to
 
     @property
     def premium(self) -> bool:
-        """Premium features are unlocked (bought, or in the trial)."""
+        """Premium features are unlocked (bought, the trial, or not on sale yet)."""
         return self.plan != "free"
 
     @property
@@ -175,9 +184,14 @@ def trial_start(stored: str, today: dt.date) -> str:
         return today.isoformat()
 
 
-def status(licence: Licence | None, trial_started: str, today: dt.date) -> Status:
+def status(licence: Licence | None, trial_started: str, today: dt.date,
+           selling: bool = True) -> Status:
+    """``selling``: Premium is on sale (on_sale()). Until it is, nobody is
+    limited, so nobody can be left with signs they have no way to unlock."""
     if licence is not None:
         return Status("premium", email=licence.email)
+    if not selling:
+        return Status("soon")
     left = trial_days_left(trial_started, today)
     return Status("trial", days_left=left) if left else Status("free")
 

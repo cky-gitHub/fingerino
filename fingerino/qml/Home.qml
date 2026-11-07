@@ -714,7 +714,8 @@ ApplicationWindow {
                     onClicked: { premiumDialog.close(); licenceDialog.ask() }
                 }
                 Button {
-                    text: "Get Premium"
+                    text: win.bridge.onSale ? "Get Premium" : "Coming soon"
+                    enabled: win.bridge.onSale
                     highlighted: true
                     onClicked: win.bridge.openPremium()
                 }
@@ -1377,12 +1378,18 @@ ApplicationWindow {
                     Card {
                         objectName: "premiumCard"
                         title: win.bridge.premiumPlan === "premium" ? "Fingerino Premium"
+                            : win.bridge.premiumPlan === "soon" ? "Premium: coming soon"
                             : win.bridge.premiumPlan === "trial"
                                 ? "Premium trial: " + win.bridge.trialDaysLeft
                                   + (win.bridge.trialDaysLeft === 1 ? " day" : " days") + " left"
                                 : "Free version"
                         description: win.bridge.premiumPlan === "premium"
                             ? "Licensed to " + win.bridge.licensedTo + ". Thank you!"
+                            : win.bridge.premiumPlan === "soon"
+                                ? "Everything is unlocked for now. Once Premium is on sale, the "
+                                  + "free version keeps " + win.signsWord(win.bridge.freeSignLimit)
+                                  + " switched on and Premium up to " + win.bridge.premiumSignLimit
+                                  + ", with a " + win.bridge.trialDays + "-day trial first. Nothing is ever deleted."
                             : win.bridge.premiumPlan === "trial"
                                 ? "Everything in Premium, for now. Afterwards Fingerino keeps "
                                   + win.signsWord(win.bridge.freeSignLimit) + " switched on; "
@@ -1404,7 +1411,8 @@ ApplicationWindow {
                             }
                             Button {
                                 visible: win.bridge.premiumPlan !== "premium"
-                                text: "Get Premium"
+                                text: win.bridge.onSale ? "Get Premium" : "Coming soon"
+                                enabled: win.bridge.onSale
                                 highlighted: win.freeVersion
                                 onClicked: win.bridge.openPremium()
                             }
