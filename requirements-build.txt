@@ -21,7 +21,7 @@
 #
 # Generated against Python 3.12, which is what the release workflow uses.
 
-absl-py==2.5.0
+absl-py==2.5.1
 altgraph==0.17.5
 certifi==2026.5.20
 cffi==2.0.0
