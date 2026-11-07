@@ -44,3 +44,8 @@ def test_installed_mediapipe_has_no_telemetry_uploader():
 def test_the_pin_stays_below_the_telemetry_builds():
     pyproject = Path(__file__).resolve().parents[1] / "pyproject.toml"
     assert '"mediapipe>=0.10.9,<=0.10.33"' in pyproject.read_text(encoding="utf-8")
+    # What the release build actually installs (see requirements-build.txt).
+    build = pyproject.with_name("requirements-build.txt").read_text(encoding="utf-8")
+    assert "
+mediapipe==0.10.33
+" in build

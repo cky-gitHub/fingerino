@@ -25,6 +25,20 @@ If the tag and `__version__` disagree, the first step of every build job fails
 with a message saying so, and nothing is published. Fix it by deleting the tag
 (see below), bumping the version, and tagging again.
 
+### Hotfix an older release
+
+When `main` already holds unreleased work, fix the released version instead:
+branch from its tag, apply only the fix, bump the patch version, and tag that
+branch's commit. Port the fix to `main` through a normal PR. v0.2.1 was cut
+this way, from `v0.2.0` on branch `release/v0.2.1`.
+
+```powershell
+git switch -c release/v0.2.1 v0.2.0
+# apply the fix, bump fingerino/__init__.py, commit
+git tag v0.2.1
+git push origin release/v0.2.1 v0.2.1
+```
+
 ### Test a build without releasing
 
 Actions → **Release** → **Run workflow** → pick a branch. It builds and selftests
