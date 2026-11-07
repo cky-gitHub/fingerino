@@ -1,6 +1,7 @@
 """Fingerino — webcam hand-tracking mouse.
 
-Gestures (one hand unless noted):
+Gestures (one hand unless noted). Move, Click, Drag and Scroll are the cursor,
+off until it is turned on in Home's Gestures page:
     Move      thumb tip drives the cursor (see config.CURSOR_SOURCE)
     Click     point (index out, middle in) — lands where you aimed, not
               where the finger dragged the hand to on its way out
@@ -12,7 +13,7 @@ Gestures (one hand unless noted):
     New chat  shaka sign (thumb + pinky out)
     Hold      both palms up, held still ~1s — pauses every gesture; do it
               again to hand control back to exactly the same set
-    Exit      cross both hands into an "X" and hold briefly — stops tracking
+    Exit      cross your index and middle fingers and hold briefly — stops tracking
 
     fingerino            # open Home; press Start to track (or: python -m fingerino)
     fingerino --debug    # add raw skeleton + FPS to the HUD

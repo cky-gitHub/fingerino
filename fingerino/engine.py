@@ -21,10 +21,11 @@ from dataclasses import dataclass
 import cv2
 import numpy as np
 
-from . import config, macui, system_actions
+from . import config, macui, settings, signs, system_actions
+from .actions import Action, Registry
 from .cursor_controller import CursorController
 from .gesture_detector import GestureEngine, cursor_point
-from .hand_tracker import HandTracker
+from .hand_tracker import HandTracker, ModelDownloadError
 from .ui_overlay import UIOverlay
 
 
@@ -77,6 +78,19 @@ def _anchored_frame_px(cursor, anchor_t: float | None, w: int, h: int):
     return _screen_to_frame_px(cursor, pos[0], pos[1], w, h)
 
 
+def perform_action(action: Action) -> str | None:
+    """Carry out a sign's action; a short message for the HUD if it failed.
+
+    A missing app or a shortcut the OS refuses must never stop tracking.
+    """
+    try:
+        system_actions.perform(action)
+    except Exception as exc:
+        print(f"[fingerino] action {action.label!r} failed: {exc!r}")
+        return f"Couldn't {action.label[0].lower()}{action.label[1:]}"
+    return None
+
+
 def _zone_px(w: int, h: int) -> tuple[int, int, int, int]:
     x1 = int(config.CONTROL_ZONE_X_MARGIN * w)
     x2 = int((1.0 - config.CONTROL_ZONE_X_MARGIN) * w)
@@ -88,14 +102,30 @@ def _zone_px(w: int, h: int) -> tuple[int, int, int, int]:
 class Session:
     """Track until stopped. Single use: start a new one to track again."""
 
-    def __init__(self, options: Options, gestures: dict[str, bool]) -> None:
+    def __init__(self, options: Options, prefs: settings.Settings,
+                 registry: Registry | None = None,
+                 library: signs.Library | None = None) -> None:
         self.options = options
-        # Shared with the Home window, which flips entries from the UI
-        # thread. Only ever read here, one bool at a time.
-        self.gestures = gestures
+        # Shared with Home too: rebinding a sign, or recording or deleting
+        # one, applies on the next frame.
+        self.registry = registry or Registry()
+        self.library = library or signs.Library()
+        # Shared with the Home window, which flips fields from the UI
+        # thread. Only ever read here, one value at a time.
+        self.prefs = prefs
         self.paused = False
         self._pause_request = threading.Event()
         self._stop = threading.Event()
+        # Seconds to record for, set from Home; picked up by the next frame.
+        self._record_request: float | None = None
+        # Set by Home from the countdown to the end of the "record a sign"
+        # dialog: gestures do nothing meanwhile, since the hand is busy
+        # showing the new sign and must not fire the old ones.
+        self._held = threading.Event()
+        # Set by Home's "Try it": (sign id, unsaved action). While set, that
+        # sign runs that action and every other gesture is silent, until the
+        # editor closes. Swapped whole, so the loop never sees half of it.
+        self._trial: tuple[str, Action] | None = None
 
     # -- called from other threads -----------------------------------------
 
@@ -107,14 +137,37 @@ class Session:
     def stop(self) -> None:
         self._stop.set()
 
+    def hold_gestures(self, on: bool) -> None:
+        """Stop (or resume) gestures acting. Tracking, the HUD and Exit
+        carry on, and a button already held down is still let go."""
+        if on:
+            self._held.set()
+        else:
+            self._held.clear()
+
+    def set_trial(self, trial: tuple[str, Action] | None) -> None:
+        """Try an unsaved action on one sign (None ends the trial). Exit and
+        button release stay live, as they do while recording."""
+        self._trial = trial
+
+    def start_recording(self, seconds: float) -> None:
+        """Record a new sign's samples, starting on the next frame. The
+        result arrives through ``run``'s ``on_record``."""
+        self._record_request = seconds
+
     # -- the loop ------------------------------------------------------------
 
     def run(self, on_frame: Callable[[np.ndarray], None],
-            on_state: Callable[[bool, bool], None]) -> str | None:
+            on_state: Callable[[bool, bool], None],
+            on_record: Callable[[float, object], None] | None = None,
+            on_sign: Callable[[str], None] | None = None) -> str | None:
         """Track until stop() or the Exit gesture.
 
         ``on_frame`` gets each finished HUD frame (BGR, ``preview_size``);
         ``on_state`` gets ``(paused, hand_seen)`` whenever either changes.
+        ``on_record`` gets ``(progress, None)`` while a recording runs and
+        ``(1.0, signs.Recording)`` when it ends; ``on_sign`` gets the id of
+        every sign that fires (for Home's "recognised" feedback).
         Returns None on a normal stop, or a message saying what went wrong.
         """
         opts = self.options
@@ -133,9 +186,14 @@ class Session:
                     "using it, or it may be on a different index — try "
                     "starting Fingerino with --camera 1.")
 
-        tracker = HandTracker()
+        try:
+            tracker = HandTracker()
+        except ModelDownloadError as exc:
+            cap.release()
+            return str(exc)
         cursor = CursorController()
         engine = GestureEngine()
+        registry = self.registry
         out_w, out_h = opts.preview_size
         # The frame is drawn at native camera resolution then shrunk to the
         # HUD, so HUD sizes must be inflated by this ratio to stay legible.
@@ -146,7 +204,7 @@ class Session:
         def _live(icon: str) -> bool:
             """May this gesture act on this frame? Off if it's switched off in
             Home, and off for everything while the session is paused."""
-            return self.gestures.get(icon, True) and not self.paused
+            return self.prefs.gestures.get(icon, True) and not self.paused
 
         def _toggle_pause() -> None:
             self.paused = not self.paused
@@ -158,6 +216,7 @@ class Session:
                 cursor.reset()
             overlay.toast("Paused — gestures off" if self.paused else "Resumed")
 
+        recorder: signs.Recorder | None = None
         error: str | None = None
         last_state: tuple[bool, bool] | None = None
         last_access_t = 0.0
@@ -189,12 +248,28 @@ class Session:
 
                 cursor_px = None
                 hands_px = None
-                out = engine.update(hands, now)
+                # Read every frame, so the switch in Home applies at once.
+                # Turning it off mid-drag releases through the trigger's
+                # ordinary path a few frames later.
+                cursor_on = self.prefs.cursor
+                engine.cursor = cursor_on
+                if engine.matcher is not self.library.matcher:
+                    engine.matcher = self.library.matcher
+                    engine.sign_names = self.library.names()
+                out = engine.update(hands, now, result.handedness if result else None)
+                # Nothing acts while Home is recording a sign, from the
+                # countdown to the end of the dialog -- including the frame
+                # a request is still waiting to be picked up. Exit and
+                # button release are exempt: see below.
+                trial = self._trial
+                quiet = (recorder is not None or self._held.is_set()
+                         or self._record_request is not None or trial is not None)
 
                 # The master switch. Turning the pause *off* is never gated on
                 # the row's own toggle -- switching Hold off while paused would
                 # otherwise leave no gesture able to give control back.
-                if out.hold_toggle and (self.paused or self.gestures.get("both_flat", True)):
+                if out.hold_toggle and not quiet and (
+                        self.paused or self.prefs.gestures.get("both_flat", True)):
                     _toggle_pause()
                 if self._pause_request.is_set():
                     self._pause_request.clear()
@@ -212,7 +287,8 @@ class Session:
                     # off the thing being aimed at. Tracking resumes the moment
                     # the point latches into a drag.
                     committing = config.FREEZE_WHILE_AIMING and out.aiming
-                    if out.mode == "move" and drive and _live("thumb") and not committing:
+                    if (out.mode == "move" and drive and _live("thumb")
+                            and not committing and not quiet):
                         cursor.update(tip[0], tip[1], now)
 
                     # Show the committed point rather than the hand's live
@@ -222,25 +298,31 @@ class Session:
                         aimed = _anchored_frame_px(cursor, out.aim_anchor_t, w, h)
                         if aimed is not None:
                             cursor_px = aimed
-                    elif out.mode == "scroll" and drive and _live("two_finger"):
+                    elif (out.mode == "scroll" and drive and not quiet
+                          and _live("two_finger")):
                         cursor.scroll(out.scroll_steps)
 
-                    if out.minimize and _live("flat_down"):
-                        if drive:
-                            system_actions.minimize_all()
-                        overlay.toast("Minimized")
-                    if out.restore and _live("flat_up"):
-                        if drive:
-                            system_actions.restore_all()
-                        overlay.toast("Restored")
-                    if out.switch_window and _live("flat_left"):
-                        if drive:
-                            system_actions.switch_window()
-                        overlay.toast("Switch window")
-                    if out.new_chat and _live("shaka"):
-                        if drive:
-                            system_actions.open_ai_chat()
-                        overlay.toast("New chat")
+                    # Signs -> actions. A sign's on/off switch in Home is
+                    # keyed by the sign's own id. Nothing fires while a new
+                    # sign is being recorded: the hand is busy showing it.
+                    fired = registry.resolve(out, _live)
+                    # "Try it": only the sign being edited acts, with the
+                    # action as it stands in the editor. Its own on/off
+                    # switch and the pause don't apply -- the user asked.
+                    if trial is not None and recorder is None and trial[0] in out.signs:
+                        failed = perform_action(trial[1]) if drive else None
+                        overlay.toast(failed or trial[1].toast)
+                        overlay.trial_recognised()
+                        if on_sign is not None:
+                            on_sign(trial[0])
+                    if not quiet:
+                        for action in fired:
+                            failed = perform_action(action) if drive else None
+                            overlay.toast(failed or action.toast)
+                        if on_sign is not None:
+                            for sign in out.signs:
+                                if _live(sign):
+                                    on_sign(sign)
                 else:
                     cursor.reset()
 
@@ -248,13 +330,13 @@ class Session:
                 # pending click and a live drag outlive the hand by the trigger's
                 # grace window, so their edges have to get through even with
                 # nothing tracked.
-                if out.click and _live("point"):
+                if out.click and not quiet and _live("point"):
                     if drive:
                         cursor.click(out.anchor_t)
                     flash_px = _anchored_frame_px(cursor, out.anchor_t, w, h) or cursor_px
                     if flash_px is not None:
                         overlay.flash_click(flash_px)
-                if out.press and drive and _live("point_hold"):
+                if out.press and drive and not quiet and _live("point_hold"):
                     cursor.press(out.anchor_t)
                 # Not gated by _live("point_hold"): release() is a safe no-op if
                 # the button isn't held, but if Drag gets disabled -- or the
@@ -262,6 +344,23 @@ class Session:
                 # button is stuck down.
                 if out.release and drive:
                     cursor.release()
+
+                # Recording a new sign, from Home.
+                request, self._record_request = self._record_request, None
+                if request is not None:
+                    recorder = signs.Recorder(now, request, cursor_on)
+                record_progress = 0.0
+                if recorder is not None:
+                    handed = result.handedness[0] if result and result.handedness else None
+                    recorder.add(hands[0] if hands else None, handed)
+                    record_progress = recorder.progress(now)
+                    if on_record is not None:
+                        on_record(record_progress, None)
+                    if recorder.done(now):
+                        if on_record is not None:
+                            on_record(1.0, recorder.result())
+                        recorder = None
+                        record_progress = 0.0
 
                 if out.exit and _live("cross"):
                     print("[fingerino] exit gesture — stopping.")
@@ -273,15 +372,21 @@ class Session:
                     mode=out.mode,
                     mode_label=out.mode_label,
                     cursor_px=cursor_px,
-                    zone_px=_zone_px(w, h),
+                    zone_px=_zone_px(w, h) if cursor_on else None,
                     hands_px=hands_px,
                     exit_progress=out.exit_progress,
                     dragging=out.dragging,
                     drag_progress=out.drag_progress,
                     debug=opts.debug,
+                    # Read every frame, like the cursor switch. Always on
+                    # while Home records a sign, so the user sees what's seen.
+                    skeleton=opts.debug or self.prefs.skeleton or quiet,
                     fps=fps,
                     paused=self.paused,
                     hold_progress=out.hold_progress,
+                    sign_progress=out.sign_progress,
+                    record_progress=record_progress,
+                    trial=trial is not None,
                 )
                 on_frame(cv2.resize(frame, (out_w, out_h), interpolation=cv2.INTER_AREA))
 

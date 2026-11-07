@@ -9,6 +9,7 @@
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
+import QtQuick.Dialogs
 
 ApplicationWindow {
     id: win
@@ -19,6 +20,8 @@ ApplicationWindow {
     // Segoe Fluent Icons ships with Windows 11; MDL2 Assets is the Windows 10
     // fallback with the same code points. Elsewhere the glyphs are left out.
     readonly property string iconFont: "Segoe Fluent Icons, Segoe MDL2 Assets"
+    // "This may not work as you expect": the sign badge and recording warnings.
+    readonly property color warnColor: "#f2cc40"
 
     width: 980
     height: 660
@@ -106,6 +109,9 @@ ApplicationWindow {
                 id: slot
                 implicitWidth: childrenRect.width
                 implicitHeight: childrenRect.height
+                // Never squeezed below its controls: the text column wraps
+                // instead, or the buttons slide over it and off the card.
+                Layout.minimumWidth: implicitWidth
             }
         }
     }
@@ -136,6 +142,472 @@ ApplicationWindow {
             x: 32
             spacing: 4
             Item { implicitHeight: 24 }
+        }
+    }
+
+    // ---- what a sign does ---------------------------------------------------
+
+    // One editor for every sign: pick a kind of action, fill in its one
+    // field, try it, save. Saving applies at once, even while tracking.
+    Dialog {
+        id: actionEditor
+        objectName: "actionEditor"
+        property string sign
+        property string kind: "builtin"
+        property string target: ""
+        anchors.centerIn: parent
+        width: Math.min(win.width - 64, 520)
+        modal: true
+        title: "What should this sign do?"
+        padding: 20
+
+        function edit(sign, how) {
+            var info = win.bridge.actionInfo(sign)
+            actionEditor.sign = sign
+            howLabel.text = how
+            kind = info.kind === "" ? "builtin" : info.kind
+            target = info.target
+            nameField.text = info.name
+            message.text = ""
+            trialHint.text = ""
+            kindBox.currentIndex = kindBox.indexOfValue(kind)
+            builtinBox.currentIndex = Math.max(0, builtinBox.indexOfValue(target))
+            mediaBox.currentIndex = Math.max(0, mediaBox.indexOfValue(target))
+            keysField.text = kind === "hotkey" ? win.bridge.comboLabel(target) : ""
+            pathField.text = (kind === "open_app" || kind === "open") ? target : ""
+            commandField.text = kind === "command" ? target : ""
+            open()
+        }
+
+        // Nothing acts while the editor is open (only the sign under "Try
+        // it", with its new action), and the trial ends when it closes,
+        // however it closes. Held from aboutToShow, so a sign just recorded
+        // goes straight from the record dialog's hold into this one.
+        onAboutToShow: win.bridge.holdGestures("editor", true)
+        onClosed: {
+            win.bridge.endTrial()
+            win.bridge.holdGestures("editor", false)
+        }
+
+        Connections {
+            target: win.bridge
+            function onSignFired(id) {
+                if (actionEditor.opened && trialHint.text !== "" && id === actionEditor.sign)
+                    trialHint.text = "✓ Recognised. That's what it will do. Save to keep it."
+            }
+        }
+
+        function currentTarget() {
+            switch (kind) {
+            case "builtin": return builtinBox.currentValue
+            case "hotkey": return keysField.text
+            case "media": return mediaBox.currentValue
+            case "command": return commandField.text
+            default: return pathField.text
+            }
+        }
+
+        FileDialog {
+            id: fileDialog
+            title: actionEditor.kind === "open_app" ? "Choose an app" : "Choose a file"
+            onAccepted: {
+                var path = decodeURIComponent(selectedFile.toString().replace(
+                    /^file:\/{2}/, ""))
+                // file:///C:/x -> C:/x on Windows; file:///home/x -> /home/x elsewhere.
+                if (/^\/[A-Za-z]:/.test(path))
+                    path = path.substring(1)
+                pathField.text = path
+            }
+        }
+
+        ColumnLayout {
+            // The dialog's width, never the content's: a wide row wraps or
+            // clips inside rather than pushing everything past the edge.
+            width: actionEditor.availableWidth
+            spacing: 10
+
+            Label {
+                id: howLabel
+                opacity: 0.7
+                Layout.fillWidth: true
+                wrapMode: Text.WordWrap
+            }
+            ComboBox {
+                id: kindBox
+                Layout.fillWidth: true
+                model: win.bridge.actionKinds
+                textRole: "label"
+                valueRole: "kind"
+                Accessible.name: "Kind of action"
+                onActivated: { actionEditor.kind = currentValue; message.text = "" }
+            }
+            ComboBox {
+                id: builtinBox
+                visible: actionEditor.kind === "builtin"
+                Layout.fillWidth: true
+                model: win.bridge.builtinActions
+                textRole: "label"
+                valueRole: "id"
+                Accessible.name: "Fingerino action"
+            }
+            // A recorder, not a text field (ui-direction section 5): click,
+            // press the shortcut, done.
+            TextField {
+                id: keysField
+                visible: actionEditor.kind === "hotkey"
+                Layout.fillWidth: true
+                readOnly: true
+                placeholderText: "Click here, then press the shortcut"
+                Accessible.name: "Keyboard shortcut"
+                Keys.onPressed: (event) => {
+                    var combo = win.bridge.comboFromKey(event.key, event.modifiers)
+                    if (combo !== "")
+                        text = combo
+                    event.accepted = true
+                }
+            }
+            ComboBox {
+                id: mediaBox
+                visible: actionEditor.kind === "media"
+                Layout.fillWidth: true
+                model: win.bridge.mediaKeys
+                textRole: "label"
+                valueRole: "id"
+                Accessible.name: "Media key"
+            }
+            RowLayout {
+                visible: actionEditor.kind === "open_app" || actionEditor.kind === "open"
+                Layout.fillWidth: true
+                TextField {
+                    id: pathField
+                    Layout.fillWidth: true
+                    placeholderText: actionEditor.kind === "open_app"
+                        ? "The app to open" : "https://… or a file"
+                    Accessible.name: actionEditor.kind === "open_app"
+                        ? "App to open" : "Web address or file"
+                }
+                Button {
+                    text: "Browse…"
+                    onClicked: fileDialog.open()
+                }
+            }
+            TextField {
+                id: commandField
+                visible: actionEditor.kind === "command"
+                Layout.fillWidth: true
+                placeholderText: "The command to run"
+                font.family: "monospace"
+                Accessible.name: "Command to run"
+            }
+            Label {
+                visible: actionEditor.kind === "command"
+                Layout.fillWidth: true
+                wrapMode: Text.WordWrap
+                font.pixelSize: 12
+                opacity: 0.7
+                text: "Runs exactly as typed, through your system's shell, each time "
+                    + "the sign is made. Only use a command you trust."
+            }
+            TextField {
+                id: nameField
+                visible: actionEditor.kind !== "builtin"
+                Layout.fillWidth: true
+                placeholderText: "Name on screen (optional)"
+                Accessible.name: "Name on screen"
+            }
+            Label {
+                id: trialHint
+                visible: text !== ""
+                Layout.fillWidth: true
+                wrapMode: Text.WordWrap
+                font.pixelSize: 12
+                opacity: 0.85
+            }
+            Label {
+                id: message
+                visible: text !== ""
+                Layout.fillWidth: true
+                wrapMode: Text.WordWrap
+                font.pixelSize: 12
+                color: "#f85149"
+            }
+            // Four controls, not six: the rarer choices sit in a menu so the
+            // row fits the dialog (five buttons ran past its right edge).
+            RowLayout {
+                Layout.fillWidth: true
+                Layout.topMargin: 8
+                spacing: 8
+                Button {
+                    text: "Try it"
+                    ToolTip.visible: hovered
+                    ToolTip.delay: 400
+                    ToolTip.text: "Make the sign to run this action. Other gestures pause until you close this."
+                    onClicked: {
+                        var err = win.bridge.tryAction(actionEditor.sign, actionEditor.kind,
+                                                       actionEditor.currentTarget(), nameField.text)
+                        message.text = err
+                        trialHint.text = err !== "" ? ""
+                            : "Make the sign now. Only this sign works, with this action, "
+                              + "until you save or cancel."
+                    }
+                }
+                ToolButton {
+                    id: editorMore
+                    text: "⋯"
+                    font.pixelSize: 20
+                    flat: true
+                    Accessible.name: "More choices"
+                    ToolTip.visible: hovered
+                    ToolTip.delay: 400
+                    ToolTip.text: "Reset or do nothing"
+                    onClicked: editorMenu.popup(editorMore, 0, editorMore.height)
+                    Menu {
+                        id: editorMenu
+                        MenuItem {
+                            text: "Reset to original"
+                            onTriggered: {
+                                win.bridge.resetAction(actionEditor.sign)
+                                actionEditor.close()
+                            }
+                        }
+                        MenuItem {
+                            text: "Do nothing"
+                            onTriggered: {
+                                win.bridge.clearAction(actionEditor.sign)
+                                actionEditor.close()
+                            }
+                        }
+                    }
+                }
+                Item { Layout.fillWidth: true }
+                Button {
+                    text: "Cancel"
+                    onClicked: actionEditor.close()
+                }
+                Button {
+                    text: "Save"
+                    highlighted: true
+                    onClicked: {
+                        var err = win.bridge.setAction(actionEditor.sign, actionEditor.kind,
+                                                       actionEditor.currentTarget(),
+                                                       nameField.text)
+                        if (err === "")
+                            actionEditor.close()
+                        else
+                            message.text = err
+                    }
+                }
+            }
+        }
+    }
+
+    // ---- recording a sign ---------------------------------------------------
+
+    Dialog {
+        id: recordDialog
+        objectName: "recordDialog"
+        property int countdown: 0
+        readonly property string phase: countdown > 0 ? "countdown"
+            : win.bridge.recordState === "idle" ? "intro" : win.bridge.recordState
+        anchors.centerIn: parent
+        width: Math.min(win.width - 64, 520)
+        modal: true
+        title: "Record a sign"
+        padding: 20
+
+        function begin() {
+            win.bridge.cancelRecording()
+            countdown = 0
+            signNameField.text = ""
+            saveError.text = ""
+            open()
+        }
+        function startCountdown() {
+            // The camera needs a moment to open; the countdown covers it.
+            if (!win.bridge.running)
+                win.bridge.start()
+            saveError.text = ""
+            win.bridge.holdGestures("record", true)    // the hand is busy; nothing should fire
+            win.bridge.cancelRecording()
+            countdown = win.bridge.recordCountdown
+            countdownTimer.start()
+        }
+        onClosed: {
+            countdownTimer.stop()
+            countdown = 0
+            win.bridge.holdGestures("record", false)
+            win.bridge.cancelRecording()
+        }
+
+        Timer {
+            id: countdownTimer
+            interval: 1000
+            repeat: true
+            onTriggered: {
+                recordDialog.countdown -= 1
+                if (recordDialog.countdown <= 0) {
+                    stop()
+                    win.bridge.captureSign()
+                }
+            }
+        }
+
+        ColumnLayout {
+            anchors.fill: parent
+            spacing: 10
+
+            Label {
+                visible: recordDialog.phase === "intro"
+                Layout.fillWidth: true
+                wrapMode: Text.WordWrap
+                text: "Make the sign with one hand where the camera can see it, and hold it for "
+                    + win.bridge.recordSeconds + " seconds. While you hold it, tilt it a "
+                    + "little and move it nearer and farther, so Fingerino learns its range.\n\n"
+                    + "Only the positions of your finger joints are kept, never a picture."
+            }
+            Label {
+                visible: recordDialog.phase === "countdown"
+                Layout.fillWidth: true
+                horizontalAlignment: Text.AlignHCenter
+                font.pixelSize: 28
+                text: "Get ready\u2026 " + recordDialog.countdown
+            }
+            Label {
+                visible: recordDialog.phase === "capturing"
+                text: "Hold the sign\u2026"
+                font.pixelSize: 16
+            }
+            ProgressBar {
+                visible: recordDialog.phase === "capturing"
+                Layout.fillWidth: true
+                value: win.bridge.recordProgress
+            }
+            Label {
+                visible: recordDialog.phase === "failed"
+                Layout.fillWidth: true
+                wrapMode: Text.WordWrap
+                color: "#f85149"
+                text: win.bridge.recordMessage
+            }
+            Label {
+                visible: recordDialog.phase === "review"
+                Layout.fillWidth: true
+                wrapMode: Text.WordWrap
+                text: "Got it. Give your sign a name."
+            }
+            Label {
+                visible: recordDialog.phase === "review" && win.bridge.recordWarning !== ""
+                Layout.fillWidth: true
+                wrapMode: Text.WordWrap
+                font.pixelSize: 12
+                color: win.warnColor
+                text: win.bridge.recordWarning
+            }
+            TextField {
+                id: signNameField
+                visible: recordDialog.phase === "review"
+                Layout.fillWidth: true
+                placeholderText: "e.g. Thumbs up"
+                maximumLength: 40
+                Accessible.name: "Sign name"
+                onAccepted: saveButton.clicked()
+            }
+            Label {
+                id: saveError
+                visible: text !== ""
+                Layout.fillWidth: true
+                wrapMode: Text.WordWrap
+                font.pixelSize: 12
+                color: "#f85149"
+            }
+            RowLayout {
+                Layout.fillWidth: true
+                Layout.topMargin: 8
+                spacing: 8
+                Button {
+                    visible: recordDialog.phase === "review"
+                    text: "Record again"
+                    onClicked: recordDialog.startCountdown()
+                }
+                Item { Layout.fillWidth: true }
+                Button {
+                    text: "Cancel"
+                    onClicked: recordDialog.close()
+                }
+                Button {
+                    visible: recordDialog.phase === "intro" || recordDialog.phase === "failed"
+                    text: recordDialog.phase === "failed" ? "Try again" : "Start recording"
+                    highlighted: true
+                    onClicked: recordDialog.startCountdown()
+                }
+                Button {
+                    id: saveButton
+                    visible: recordDialog.phase === "review"
+                    text: "Save and choose what it does"
+                    highlighted: true
+                    onClicked: {
+                        var name = signNameField.text
+                        var r = win.bridge.saveSign(name)
+                        if (r.error) {
+                            saveError.text = r.error
+                            return
+                        }
+                        recordDialog.close()
+                        actionEditor.edit(r.id, "When you make \u201c" + name.trim() + "\u201d")
+                    }
+                }
+            }
+        }
+    }
+
+    Dialog {
+        id: renameDialog
+        objectName: "renameDialog"
+        property string signId
+        anchors.centerIn: parent
+        width: Math.min(win.width - 64, 420)
+        modal: true
+        title: "Rename sign"
+        standardButtons: Dialog.Save | Dialog.Cancel
+        // Qualified on purpose: a bare name can resolve to an element id
+        // elsewhere in this file instead of the property (ids win).
+        function ask(sid, name) {
+            renameDialog.signId = sid
+            renameField.text = name
+            renameDialog.open()
+        }
+        onAccepted: if (renameField.text.trim() !== "")
+                        win.bridge.renameSign(renameDialog.signId, renameField.text)
+        TextField {
+            id: renameField
+            width: parent.width
+            maximumLength: 40
+            Accessible.name: "Sign name"
+        }
+    }
+
+    Dialog {
+        id: deleteDialog
+        objectName: "deleteDialog"
+        property string signId
+        property string signName
+        anchors.centerIn: parent
+        width: Math.min(win.width - 64, 420)
+        modal: true
+        title: "Delete \u201c" + deleteDialog.signName + "\u201d?"
+        standardButtons: Dialog.Ok | Dialog.Cancel
+        // Qualified: a bare `signName` once resolved to the record dialog's
+        // text field id, so the assignment threw and the dialog never opened.
+        function ask(sid, name) {
+            deleteDialog.signId = sid
+            deleteDialog.signName = name
+            deleteDialog.open()
+        }
+        onAccepted: win.bridge.deleteSign(deleteDialog.signId)
+        Label {
+            width: parent.width
+            wrapMode: Text.WordWrap
+            text: "The sign and what it does are removed. This can't be undone."
         }
     }
 
@@ -193,9 +665,10 @@ ApplicationWindow {
                             wrapMode: Text.WordWrap
                             font.pixelSize: 12
                             opacity: 0.7
-                            text: "Press Start, then hold one hand up in front of your camera. "
-                                + "Steer the pointer with your thumb and point your index finger "
-                                + "to click. The Gestures page has the rest.\n\n"
+                            text: "Press Start, then hold one hand up in front of your camera "
+                                + "and make a shaka (thumb and little finger out) to try a sign. "
+                                + "The Gestures page lists the rest, lets you change what each "
+                                + "sign does, and has the switch for controlling the cursor.\n\n"
                                 + "Your camera stays off until you press Start, and your video "
                                 + "is processed on this computer and never leaves it."
                         }
@@ -305,8 +778,10 @@ ApplicationWindow {
                     Layout.fillWidth: true
                     wrapMode: Text.WordWrap
                     opacity: 0.7
-                    text: "Turn off any gesture you don't want. Changes apply "
-                        + "immediately, even while tracking, and are remembered."
+                    text: "Turn off any gesture you don't want, or press Change to give a "
+                        + "sign a different job: a shortcut, a media key, an app, a website "
+                        + "or a command. Changes apply immediately, even while tracking, "
+                        + "and are remembered."
                 }
 
                 Repeater {
@@ -317,54 +792,173 @@ ApplicationWindow {
                         Layout.fillWidth: true
                         spacing: 4
                         SectionHeader { text: group.modelData.name }
+                        // The cursor module's master switch, at the head of
+                        // the group it controls. Off by default.
+                        Card {
+                            visible: group.modelData.cursor
+                            title: "Control the cursor with your hand"
+                            description: win.bridge.cursorEnabled
+                                ? "On: your hand moves the pointer, clicks, drags and scrolls."
+                                : "Off: Fingerino never moves the mouse, and pointing or two "
+                                  + "fingers are free to use as your own signs."
+                            Switch {
+                                checked: win.bridge.cursorEnabled
+                                onToggled: win.bridge.setCursorEnabled(checked)
+                                Accessible.name: "Control the cursor with your hand"
+                            }
+                        }
                         Repeater {
                             model: group.modelData.rows
                             delegate: Card {
                                 id: row
                                 required property var modelData
-                                title: modelData.label
+                                // Shown, not hidden, while the cursor is off,
+                                // and greyed out to say why (ui-direction 6.3).
+                                enabled: !modelData.cursor || win.bridge.cursorEnabled
+                                // A sign's card is titled by what it does now,
+                                // which the user may have changed.
+                                title: modelData.sign
+                                    ? (win.bridge.bindingsVersion,
+                                       win.bridge.actionInfo(modelData.icon).label)
+                                    : modelData.label
                                 description: modelData.desc
                                 image: modelData.image
-                                Switch {
-                                    checked: win.bridge.gestureEnabled(row.modelData.icon)
-                                    onToggled: win.bridge.setGestureEnabled(
-                                        row.modelData.icon, checked)
-                                    Accessible.name: row.modelData.label
+                                RowLayout {
+                                    spacing: 12
+                                    Button {
+                                        visible: row.modelData.sign
+                                        text: "Change"
+                                        Accessible.name: "Change what " + row.modelData.desc
+                                            + " does"
+                                        onClicked: actionEditor.edit(row.modelData.icon,
+                                                                     row.modelData.desc)
+                                    }
+                                    Switch {
+                                        checked: win.bridge.gestureEnabled(row.modelData.icon)
+                                        onToggled: win.bridge.setGestureEnabled(
+                                            row.modelData.icon, checked)
+                                        Accessible.name: row.modelData.label
+                                    }
                                 }
                             }
                         }
                     }
                 }
 
-                // Premium, announced but not sold yet. Switching gestures on
-                // and off stays free: it is an accessibility feature
-                // (docs/ui-direction.md, section 5).
-                SectionHeader { text: "Your own gestures" }
-                Card {
-                    title: "Custom gestures"
-                    description: "Give any gesture a different job, such as a keyboard "
-                        + "shortcut, opening an app or media keys, and teach "
-                        + "Fingerino new hand shapes."
-                    RowLayout {
-                        spacing: 12
-                        Label {
-                            text: "Premium"
-                            font.pixelSize: 11
-                            font.weight: Font.DemiBold
-                            color: win.palette.highlightedText
-                            leftPadding: 8
-                            rightPadding: 8
-                            topPadding: 3
-                            bottomPadding: 3
-                            background: Rectangle {
-                                radius: 4
-                                color: win.palette.highlight
+                // ---- the user's own signs ----
+                SectionHeader { text: "Your own signs" }
+                Label {
+                    Layout.fillWidth: true
+                    wrapMode: Text.WordWrap
+                    opacity: 0.7
+                    text: "Teach Fingerino a hand sign of your own and choose what it does. "
+                        + "Hold the sign for a moment to use it."
+                }
+                Repeater {
+                    model: win.bridge.customSigns
+                    delegate: Card {
+                        id: mine
+                        required property var modelData
+                        property bool recognised: false
+                        title: modelData.name
+                        description: (recognised ? "\u2713 Recognised just now \u00b7 " : "")
+                            + "Does: " + modelData.action
+                        Connections {
+                            target: win.bridge
+                            function onSignFired(id) {
+                                if (id === mine.modelData.id) {
+                                    mine.recognised = true
+                                    recognisedTimer.restart()
+                                }
                             }
                         }
-                        Button {
-                            text: "Coming soon"
-                            enabled: false
+                        Timer {
+                            id: recognisedTimer
+                            interval: 2500
+                            onTriggered: mine.recognised = false
                         }
+                        RowLayout {
+                            spacing: 8
+                            // A quiet "!" when this sign may never fire: it looks
+                            // like a built-in, or like another of your signs.
+                            Rectangle {
+                                visible: mine.modelData.warning !== ""
+                                implicitWidth: 18
+                                implicitHeight: 18
+                                radius: 9
+                                color: "transparent"
+                                border.width: 1.5
+                                border.color: win.warnColor
+                                Accessible.role: Accessible.StaticText
+                                Accessible.name: mine.modelData.warning
+                                Label {
+                                    anchors.centerIn: parent
+                                    text: "!"
+                                    font.pixelSize: 11
+                                    font.bold: true
+                                    color: win.warnColor
+                                }
+                                HoverHandler { id: warnHover }
+                                ToolTip {
+                                    id: warnTip
+                                    visible: warnHover.hovered
+                                    delay: 250
+                                    text: mine.modelData.warning
+                                    contentItem: Label {
+                                        text: warnTip.text
+                                        color: win.warnColor
+                                        wrapMode: Text.WordWrap
+                                    }
+                                }
+                            }
+                            Button {
+                                text: "Change"
+                                Accessible.name: "Change what " + mine.modelData.name + " does"
+                                onClicked: actionEditor.edit(mine.modelData.id,
+                                    "When you make \u201c" + mine.modelData.name + "\u201d")
+                            }
+                            // Rename and Delete live in a menu, so the row stays
+                            // short enough to fit a narrow window.
+                            ToolButton {
+                                id: moreButton
+                                text: "⋯"
+                                font.pixelSize: 20
+                                flat: true
+                                Accessible.name: "More for " + mine.modelData.name
+                                ToolTip.visible: hovered
+                                ToolTip.delay: 400
+                                ToolTip.text: "Rename or delete"
+                                onClicked: moreMenu.popup(moreButton, 0, moreButton.height)
+                                Menu {
+                                    id: moreMenu
+                                    MenuItem {
+                                        text: "Rename"
+                                        onTriggered: renameDialog.ask(mine.modelData.id,
+                                                                      mine.modelData.name)
+                                    }
+                                    MenuItem {
+                                        text: "Delete"
+                                        onTriggered: deleteDialog.ask(mine.modelData.id,
+                                                                      mine.modelData.name)
+                                    }
+                                }
+                            }
+                            Switch {
+                                checked: mine.modelData.enabled
+                                onToggled: win.bridge.setSignEnabled(mine.modelData.id, checked)
+                                Accessible.name: mine.modelData.name
+                            }
+                        }
+                    }
+                }
+                Card {
+                    title: "Add a sign"
+                    description: "Hold a hand shape in front of the camera for a few seconds, "
+                        + "name it, and choose what it does."
+                    Button {
+                        text: "Record a sign"
+                        highlighted: true
+                        onClicked: recordDialog.begin()
                     }
                 }
                 Item { implicitHeight: 24 }
@@ -382,6 +976,16 @@ ApplicationWindow {
                         checked: win.bridge.startOnOpen
                         onToggled: win.bridge.setStartOnOpen(checked)
                         Accessible.name: "Start tracking when Fingerino opens"
+                    }
+                }
+                Card {
+                    title: "Show the hand skeleton"
+                    description: "Draws the joints Fingerino tracks over your hand in the "
+                        + "preview. Always shown while you record a sign."
+                    Switch {
+                        checked: win.bridge.showSkeleton
+                        onToggled: win.bridge.setShowSkeleton(checked)
+                        Accessible.name: "Show the hand skeleton"
                     }
                 }
                 Card {

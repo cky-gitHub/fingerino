@@ -20,7 +20,7 @@ from pathlib import Path
 from typing import cast
 
 import numpy as np
-from PySide6.QtCore import Property, QObject, QSize, QTimer, QUrl, Signal, Slot
+from PySide6.QtCore import Property, QObject, QSize, Qt, QTimer, QUrl, Signal, Slot
 from PySide6.QtGui import QAction, QDesktopServices, QIcon, QImage
 from PySide6.QtNetwork import QLocalServer, QLocalSocket
 from PySide6.QtQml import QQmlApplicationEngine
@@ -28,8 +28,9 @@ from PySide6.QtQuick import QQuickWindow
 from PySide6.QtQuickControls2 import QQuickStyle
 from PySide6.QtWidgets import QApplication, QMenu, QSystemTrayIcon
 
-from . import __version__, config, settings, system_actions, winui
+from . import __version__, actions, config, settings, signs, system_actions, winui
 from .engine import Options, Session
+from .gesture_detector import BUILTIN_SIGNS
 from .hud import Hud
 from .ui_overlay import _GESTURE_ICON_FILES, _asset_root
 
@@ -60,6 +61,48 @@ def hotkey_label(combo: str) -> str:
         part = part.strip().strip("<>")
         parts.append(part.upper() if len(part) == 1 else part.capitalize())
     return "+".join(parts)
+
+
+_QT_NAMED_KEYS = {
+    Qt.Key.Key_Space: "space", Qt.Key.Key_Tab: "tab", Qt.Key.Key_Return: "enter",
+    Qt.Key.Key_Enter: "enter", Qt.Key.Key_Escape: "esc",
+    Qt.Key.Key_Backspace: "backspace", Qt.Key.Key_Delete: "delete",
+    Qt.Key.Key_Insert: "insert", Qt.Key.Key_Home: "home", Qt.Key.Key_End: "end",
+    Qt.Key.Key_PageUp: "page_up", Qt.Key.Key_PageDown: "page_down",
+    Qt.Key.Key_Up: "up", Qt.Key.Key_Down: "down", Qt.Key.Key_Left: "left",
+    Qt.Key.Key_Right: "right",
+}
+
+
+def combo_from_qt(key: int, modifiers: int) -> str:
+    """A key press in Home's shortcut recorder -> ``"ctrl+shift+k"``, or "".
+
+    "" while only modifiers are down, so the recorder waits for the real key.
+    Qt calls Cmd "Control" on macOS and Ctrl "Meta"; this undoes that, so
+    what is stored is what pynput will press.
+    """
+    mods = Qt.KeyboardModifier(modifiers)
+    mac = sys.platform == "darwin"
+    names = set()
+    if mods & Qt.KeyboardModifier.ControlModifier:
+        names.add("cmd" if mac else "ctrl")
+    if mods & Qt.KeyboardModifier.MetaModifier:
+        names.add("ctrl" if mac else "cmd")
+    if mods & Qt.KeyboardModifier.AltModifier:
+        names.add("alt")
+    if mods & Qt.KeyboardModifier.ShiftModifier:
+        names.add("shift")
+    if Qt.Key.Key_A <= key <= Qt.Key.Key_Z or Qt.Key.Key_0 <= key <= Qt.Key.Key_9:
+        name = chr(key).lower()
+    elif Qt.Key.Key_F1 <= key <= Qt.Key.Key_F20:
+        name = f"f{key - Qt.Key.Key_F1 + 1}"
+    elif key in _QT_NAMED_KEYS:
+        name = _QT_NAMED_KEYS[Qt.Key(key)]
+    elif 0x21 <= key <= 0x7E and chr(key) != "+":
+        name = chr(key)                  # punctuation
+    else:
+        return ""                        # a modifier on its own, or unknown
+    return actions.normalize_combo("+".join([*names, name])) or ""
 
 
 def hud_size(screen_w: int, screen_h: int) -> tuple[int, int]:
@@ -95,6 +138,8 @@ class _Relay(QObject):
     state = Signal(bool, bool)
     finished = Signal(object, object)       # (session, error message or None)
     hotkey = Signal()
+    record = Signal(float, object)          # (progress, signs.Recording or None)
+    sign = Signal(str)                      # a sign fired
 
 
 class Bridge(QObject):
@@ -103,6 +148,10 @@ class Bridge(QObject):
 
     stateChanged = Signal()
     settingsChanged = Signal()
+    bindingsChanged = Signal()
+    signsChanged = Signal()
+    recordChanged = Signal()
+    signFired = Signal(str)                 # a sign's id, as it fires
 
     def __init__(self, shell: Shell) -> None:
         super().__init__()
@@ -111,10 +160,14 @@ class Bridge(QObject):
                        for icon, name in _GESTURE_ICON_FILES.items()}
         # Built once: the switches change their own state, so the list never
         # needs rebuilding (rebuilding it is what made it stutter).
+        self._bindings_version = 0
         self._groups = [
             {"name": name,
+             "cursor": any(icon in config.CURSOR_GESTURES for icon, _, _ in rows),
              "rows": [{"icon": icon, "label": label, "desc": desc,
-                       "image": self._icons.get(icon, "")}
+                       "image": self._icons.get(icon, ""),
+                       "cursor": icon in config.CURSOR_GESTURES,
+                       "sign": icon in BUILTIN_SIGNS}
                       for icon, label, desc in rows]}
             for name, rows in config.GESTURE_GROUPS]
 
@@ -149,8 +202,16 @@ class Bridge(QObject):
     def _start_on_open(self) -> bool:
         return self._shell.prefs.start_on_open
 
+    def _cursor(self) -> bool:
+        return self._shell.prefs.cursor
+
+    def _skeleton(self) -> bool:
+        return self._shell.prefs.skeleton
+
     onboarded = Property(bool, _onboarded, notify=settingsChanged)
+    cursorEnabled = Property(bool, _cursor, notify=settingsChanged)
     startOnOpen = Property(bool, _start_on_open, notify=settingsChanged)
+    showSkeleton = Property(bool, _skeleton, notify=settingsChanged)
 
     # -- constants --------------------------------------------------------------
 
@@ -163,7 +224,33 @@ class Bridge(QObject):
     def _hotkey(self) -> str:
         return hotkey_label(self._shell.prefs.hotkey)
 
+    def _action_kinds(self) -> list:
+        return [{"kind": k, "label": v} for k, v in actions.KINDS.items()]
+
+    def _builtin_actions(self) -> list:
+        return [{"id": k, "label": v} for k, v in actions.BUILTIN_TITLES.items()]
+
+    def _media_keys(self) -> list:
+        return [{"id": k, "label": v} for k, v in actions.MEDIA_KEYS.items()]
+
+    def _bindings_version_(self) -> int:
+        return self._bindings_version
+
+    def _record_countdown(self) -> int:
+        return config.SIGN_RECORD_COUNTDOWN_S
+
+    def _record_seconds(self) -> int:
+        return round(config.SIGN_RECORD_S)
+
     groups = Property(list, _groups_, constant=True)
+    recordCountdown = Property(int, _record_countdown, constant=True)
+    recordSeconds = Property(int, _record_seconds, constant=True)
+    actionKinds = Property(list, _action_kinds, constant=True)
+    builtinActions = Property(list, _builtin_actions, constant=True)
+    mediaKeys = Property(list, _media_keys, constant=True)
+    # Bumped on every rebinding; QML reads it inside bindings that call
+    # actionInfo() so they re-evaluate.
+    bindingsVersion = Property(int, _bindings_version_, notify=bindingsChanged)
     version = Property(str, _version, constant=True)
     hotkey = Property(str, _hotkey, constant=True)
 
@@ -194,6 +281,141 @@ class Bridge(QObject):
         if icon in self._shell.prefs.gestures:
             self._shell.prefs.gestures[icon] = on
             self._shell.save()
+
+    @Slot(bool)
+    def setCursorEnabled(self, on: bool) -> None:
+        self._shell.prefs.cursor = on
+        self._shell.save()
+        self.settingsChanged.emit()
+        self.signsChanged.emit()          # a sign's "looks like pointing" note
+
+    # -- the user's own signs -----------------------------------------------------
+
+    def _custom_signs(self) -> list:
+        reg = self._shell.registry
+        lib, cursor = self._shell.library, self._shell.prefs.cursor
+        return [{"id": s.id, "name": s.name, "enabled": s.enabled,
+                 "action": actions.describe(reg.action_for(s.id))["label"],
+                 "warning": lib.warning(s.id, cursor)}
+                for s in lib.signs]
+
+    def _record_state(self) -> str:
+        return self._shell.record_state
+
+    def _record_progress(self) -> float:
+        return self._shell.record_progress
+
+    def _record_message(self) -> str:
+        return self._shell.record_message
+
+    def _record_warning(self) -> str:
+        return self._shell.record_warning
+
+    customSigns = Property(list, _custom_signs, notify=signsChanged)
+    # idle -> capturing -> review (or failed); see Shell.capture_sign.
+    recordState = Property(str, _record_state, notify=recordChanged)
+    recordProgress = Property(float, _record_progress, notify=recordChanged)
+    recordMessage = Property(str, _record_message, notify=recordChanged)
+    recordWarning = Property(str, _record_warning, notify=recordChanged)
+
+    @Slot()
+    def captureSign(self) -> None:
+        self._shell.capture_sign()
+
+    @Slot(str, bool)
+    def holdGestures(self, reason: str, on: bool) -> None:
+        """Silence gestures for ``reason`` ("record": countdown until the
+        record dialog closes; "editor": while the action editor is open)."""
+        self._shell.hold_gestures(on, reason)
+
+    @Slot()
+    def cancelRecording(self) -> None:
+        self._shell.reset_recording()
+
+    @Slot(str, result="QVariantMap")
+    def saveSign(self, name: str) -> dict:
+        """Keep the reviewed recording as a new sign: {"id": ...} or {"error": ...}."""
+        return self._shell.save_sign(name)
+
+    @Slot(str, str)
+    def renameSign(self, sign_id: str, name: str) -> None:
+        self._shell.library.rename(sign_id, name)
+        self._shell.save_signs()
+        self.signsChanged.emit()
+
+    @Slot(str, bool)
+    def setSignEnabled(self, sign_id: str, on: bool) -> None:
+        self._shell.library.set_enabled(sign_id, on)
+        self._shell.save_signs()
+        self.signsChanged.emit()
+
+    @Slot(str)
+    def deleteSign(self, sign_id: str) -> None:
+        self._shell.library.delete(sign_id)
+        self._shell.registry.forget(sign_id)
+        self._shell.save_signs()
+        self._shell.save_actions()
+        self.signsChanged.emit()
+
+    # -- what signs do -----------------------------------------------------------
+
+    def _bindings_edited(self) -> None:
+        self._shell.save_actions()
+        self._bindings_version += 1
+        self.bindingsChanged.emit()
+        self.signsChanged.emit()           # custom sign cards show their action
+
+    @Slot(str, result="QVariantMap")
+    def actionInfo(self, sign: str) -> dict:
+        return actions.describe(self._shell.registry.action_for(sign))
+
+    @Slot(str, str, str, str, result=str)
+    def setAction(self, sign: str, kind: str, target: str, name: str) -> str:
+        """Bind ``sign`` to a new action; an error message, or "" if done.
+
+        Typing a command here is what approves it.
+        """
+        made = actions.make_action(kind, target, name, approved=True)
+        if isinstance(made, str):
+            return made
+        self._shell.registry.bind(sign, made)
+        self._bindings_edited()
+        return ""
+
+    @Slot(str)
+    def clearAction(self, sign: str) -> None:
+        self._shell.registry.bind(sign, None)
+        self._bindings_edited()
+
+    @Slot(str)
+    def resetAction(self, sign: str) -> None:
+        self._shell.registry.reset(sign)
+        self._bindings_edited()
+
+    @Slot(str, str, str, str, result=str)
+    def tryAction(self, sign: str, kind: str, target: str, name: str) -> str:
+        """Arm "Try it": an error message, or "" once the sign is live."""
+        return self._shell.start_trial(sign, kind, target, name)
+
+    @Slot()
+    def endTrial(self) -> None:
+        self._shell.end_trial()
+
+    @Slot(int, int, result=str)
+    def comboFromKey(self, key: int, modifiers: int) -> str:
+        """The shortcut being pressed, as people write it ("Ctrl+Shift+K")."""
+        combo = combo_from_qt(key, modifiers)
+        return actions.combo_label(combo) if combo else ""
+
+    @Slot(str, result=str)
+    def comboLabel(self, combo: str) -> str:
+        return actions.combo_label(combo) if combo else ""
+
+    @Slot(bool)
+    def setShowSkeleton(self, on: bool) -> None:
+        self._shell.prefs.skeleton = on
+        self._shell.save()
+        self.settingsChanged.emit()
 
     @Slot(bool)
     def setStartOnOpen(self, on: bool) -> None:
@@ -252,6 +474,16 @@ class Shell:
 
         self.prefs = prefs
         self.data_dir = data_dir
+        self.registry = actions.load(data_dir)
+        self.library = signs.load(data_dir)
+        # Recording a new sign: see capture_sign().
+        self.record_state = "idle"
+        self.record_progress = 0.0
+        self.record_message = ""
+        self.record_warning = ""
+        self._hold_reasons: set[str] = set()    # see hold_gestures()
+        self.trial: tuple[str, actions.Action] | None = None   # see start_trial()
+        self._recording: signs.Recording | None = None
         self.options = options or Options()
         self._on_crash = on_crash
         self.session: Session | None = None
@@ -266,6 +498,8 @@ class Shell:
         self._relay.state.connect(self._on_state)
         self._relay.finished.connect(self._on_finished)
         self._relay.hotkey.connect(self._on_hotkey)
+        self._relay.record.connect(self._on_record)
+        self._relay.sign.connect(self._on_sign)
         # The newest frame from the session thread. Only the latest is kept,
         # so a busy UI thread skips frames instead of queueing them up.
         self._frame_lock = threading.Lock()
@@ -367,10 +601,12 @@ class Shell:
         size = self.hud.size()
         self.options.preview_size = (round(size.width() * dpr),
                                      round(size.height() * dpr))
-        # The session reads the same dict Home writes, so a switch flipped
+        # The session reads the same object Home writes, so a switch flipped
         # mid-session applies on the next frame.
-        session = Session(self.options, self.prefs.gestures)
+        session = Session(self.options, self.prefs, self.registry, self.library)
         self.session = session
+        session.hold_gestures(self.gestures_held)
+        session.set_trial(self.trial)
         self.paused = False
         self.hand_seen = False
         self.error = ""
@@ -384,7 +620,8 @@ class Shell:
         """Body of the tracking thread."""
         error: str | None
         try:
-            error = session.run(self._on_frame, self._relay.state.emit)
+            error = session.run(self._on_frame, self._relay.state.emit,
+                                self._relay.record.emit, self._relay.sign.emit)
         except Exception as exc:
             error = (self._on_crash(exc) if self._on_crash
                      else f"Tracking stopped unexpectedly: {exc}")
@@ -410,6 +647,107 @@ class Shell:
         if img is not None and self.session is not None:
             self.hud.set_frame(img)
 
+    # -- recording a sign ---------------------------------------------------------
+
+    def _record_update(self, state: str, progress: float = 0.0, message: str = "",
+                       warning: str = "") -> None:
+        self.record_state, self.record_progress = state, progress
+        self.record_message, self.record_warning = message, warning
+        self.bridge.recordChanged.emit()
+
+    def capture_sign(self) -> None:
+        """Start recording the hand for a new sign (tracking must be on)."""
+        if self.session is None:
+            self._record_update("failed", message="Start Fingerino first, so the "
+                                "camera can see your hand.")
+            return
+        self._recording = None
+        self._record_update("capturing")
+        self.session.start_recording(config.SIGN_RECORD_S)
+
+    def hold_gestures(self, on: bool, reason: str = "record") -> None:
+        """Silence gestures while any reason holds them.
+
+        Reasons rather than one flag, because recording hands straight over
+        to the action editor: the record dialog finishing closing must not
+        let go of the hold the editor has just taken. Remembered here as
+        well as passed on, so a session that starts meanwhile (the camera
+        is still opening) picks it up.
+        """
+        if on:
+            self._hold_reasons.add(reason)
+        else:
+            self._hold_reasons.discard(reason)
+        if self.session is not None:
+            self.session.hold_gestures(self.gestures_held)
+
+    @property
+    def gestures_held(self) -> bool:
+        return bool(self._hold_reasons)
+
+    def start_trial(self, sign: str, kind: str, target: str, name: str) -> str:
+        """Let ``sign`` run this unsaved action, and nothing else act, until
+        end_trial(). Starts tracking if it is off, since trying needs the
+        camera. Returns an error message, or ""."""
+        made = actions.make_action(kind, target, name)
+        if isinstance(made, str):
+            return made
+        self.trial = (sign, made)
+        if self.session is None:
+            self.start()                 # passes the trial on
+        else:
+            self.session.set_trial(self.trial)
+        return ""
+
+    def end_trial(self) -> None:
+        self.trial = None
+        if self.session is not None:
+            self.session.set_trial(None)
+
+    def reset_recording(self) -> None:
+        self._recording = None
+        self._record_update("idle")
+
+    def _on_record(self, progress: float, result: object) -> None:
+        if self.record_state != "capturing":
+            return                       # cancelled meanwhile
+        if not isinstance(result, signs.Recording):
+            self._record_update("capturing", progress)
+            return
+        if result.error:
+            self._record_update("failed", message=result.error)
+            return
+        self._recording = result
+        warning = ""
+        if result.builtin:
+            warning = (f"This looks like {result.builtin}. Fingerino checks that "
+                       "first, so this sign may never be recognised. Try a "
+                       "different hand shape.")
+        else:
+            twin = signs.similar_sign(self.library, result.samples)
+            if twin:
+                warning = (f"This looks a lot like your sign \u201c{twin}\u201d. Fingerino "
+                           "won't be able to tell them apart, so neither may work. "
+                           "Try a more different shape.")
+        self._record_update("review", 1.0, warning=warning)
+
+    def save_sign(self, name: str) -> dict:
+        if self._recording is None:
+            return {"error": "Record the sign first."}
+        if not name.strip():
+            return {"error": "Give the sign a name."}
+        sign = self.library.add(name, self._recording.samples, self._recording.builtin)
+        self.save_signs()
+        self.reset_recording()
+        self.bridge.signsChanged.emit()
+        return {"id": sign.id}
+
+    def save_signs(self) -> None:
+        signs.save(self.data_dir, self.library)
+
+    def _on_sign(self, sign_id: str) -> None:
+        self.bridge.signFired.emit(sign_id)
+
     def _on_state(self, paused: bool, hand_seen: bool) -> None:
         self.paused, self.hand_seen = paused, hand_seen
         self._refresh()
@@ -420,6 +758,9 @@ class Shell:
         self.session = None
         self.paused = self.hand_seen = False
         self.error = error or ""
+        if self.record_state == "capturing":
+            self._record_update("failed", message="Tracking stopped before the "
+                                "recording finished.")
         self.hud.hide()
         self._refresh()
         # Stopped by the Exit gesture, the HUD's X or an error: make sure
@@ -487,6 +828,9 @@ class Shell:
 
     def save(self) -> None:
         settings.save(self.data_dir, self.prefs)
+
+    def save_actions(self) -> None:
+        actions.save(self.data_dir, self.registry)
 
     def quit(self) -> None:
         self.app.quit()

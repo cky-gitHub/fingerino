@@ -86,3 +86,75 @@ def test_closing_home_while_off_quits(app, monkeypatch):
     monkeypatch.setattr(a, "quit", lambda: quits.append(True))
     a.bridge.homeClosed()
     assert quits == [True]
+
+
+def test_cursor_switch_is_saved_and_marks_the_pointer_group(app):
+    a, data = app
+    assert a.bridge.property("cursorEnabled") is False
+    a.bridge.setCursorEnabled(True)
+    stored = json.loads((data / settings.FILENAME).read_text(encoding="utf-8"))
+    assert stored["cursor"] is True
+    assert a.bridge.property("cursorEnabled") is True
+    a.bridge.setCursorEnabled(False)
+    groups = a.bridge.property("groups")
+    pointer = [g for g in groups if g["cursor"]]
+    assert [g["name"] for g in pointer] == ["Pointer"]
+    assert {r["icon"] for r in pointer[0]["rows"] if r["cursor"]} == config.CURSOR_GESTURES
+
+
+def test_rebinding_a_sign_from_home_is_saved_and_shown(app):
+    a, data = app
+    assert a.bridge.actionInfo("shaka")["label"] == "New chat"
+    version = a.bridge.property("bindingsVersion")
+    err = a.bridge.setAction("shaka", "open", "https://open.spotify.com/playlist/x", "")
+    assert err == ""
+    assert a.bridge.property("bindingsVersion") == version + 1
+    info = a.bridge.actionInfo("shaka")
+    assert info["kind"] == "open" and info["label"] == "Open spotify.com"
+    stored = json.loads((data / "actions.json").read_text(encoding="utf-8"))
+    assert stored["bindings"]["shaka"].startswith("user-")
+    assert stored["actions"][0]["target"] == "https://open.spotify.com/playlist/x"
+    # The running session shares the registry, so this reaches it at once.
+    assert a.registry.action_for("shaka").kind == "open"
+
+    a.bridge.resetAction("shaka")
+    assert a.bridge.actionInfo("shaka")["label"] == "New chat"
+    a.bridge.clearAction("flat_left")
+    assert a.bridge.actionInfo("flat_left")["label"] == "Does nothing"
+    a.bridge.resetAction("flat_left")
+
+
+def test_invalid_action_is_refused_with_a_message(app):
+    a, _ = app
+    assert a.bridge.setAction("shaka", "hotkey", "ctrl+shift", "") != ""
+    assert a.bridge.setAction("shaka", "open", "  ", "") != ""
+    assert a.bridge.actionInfo("shaka")["label"] == "New chat"
+
+
+def test_sign_rows_are_marked_for_the_action_editor(app):
+    a, _ = app
+    rows = [r for g in a.bridge.property("groups") for r in g["rows"]]
+    assert {r["icon"] for r in rows if r["sign"]} == {
+        "shaka", "flat_down", "flat_up", "flat_left", "flat_right"}
+
+
+@pytest.mark.parametrize("key, mods, combo", [
+    ("Key_K", ("ControlModifier", "ShiftModifier"), "ctrl+shift+k"),
+    ("Key_F5", (), "f5"),
+    ("Key_Space", ("AltModifier",), "alt+space"),
+    ("Key_Control", ("ControlModifier",), ""),          # still waiting for a key
+])
+def test_shortcut_recorder_turns_key_presses_into_shortcuts(key, mods, combo, monkeypatch):
+    from PySide6.QtCore import Qt
+    monkeypatch.setattr(shell.sys, "platform", "win32")
+    m = 0
+    for name in mods:
+        m |= getattr(Qt.KeyboardModifier, name).value
+    assert shell.combo_from_qt(getattr(Qt.Key, key).value, m) == combo
+
+
+def test_shortcut_recorder_swaps_cmd_and_ctrl_on_macos(monkeypatch):
+    from PySide6.QtCore import Qt
+    monkeypatch.setattr(shell.sys, "platform", "darwin")
+    m = Qt.KeyboardModifier.ControlModifier.value
+    assert shell.combo_from_qt(Qt.Key.Key_K.value, m) == "cmd+k"

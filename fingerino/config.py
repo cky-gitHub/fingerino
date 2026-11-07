@@ -19,7 +19,7 @@ FLIP_HORIZONTAL = True
 # Model
 # ---------------------------------------------------------------------------
 MODEL_FILENAME = "hand_landmarker.task"
-NUM_HANDS = 2                       # 2 so the cross-hands "X" exit can be seen
+NUM_HANDS = 2                       # 2 so both palms (Hold) can be seen
 MIN_HAND_DETECTION_CONFIDENCE = 0.5
 MIN_HAND_PRESENCE_CONFIDENCE = 0.5
 MIN_TRACKING_CONFIDENCE = 0.5
@@ -150,6 +150,29 @@ AI_CHAT_MODIFIER = "alt"            # alt | ctrl | cmd | shift
 AI_CHAT_KEY = "space"              # e.g. "space", or a letter like "j"
 
 # ---------------------------------------------------------------------------
+# Your own signs (sign_matcher.py)
+# ---------------------------------------------------------------------------
+# Distances are in hand sizes (wrist to knuckles = 1), as an RMS over all 21
+# landmarks. Bending one finger fully moves the match by roughly 0.2; tracker
+# jitter on a still hand is a few hundredths.
+SIGN_MATCH_MAX_DIST = 0.12          # farther than this from every sample: no sign
+SIGN_MATCH_MARGIN = 1.3             # the runner-up sign must be this much farther
+SIGN_MAX_ANGLE_DEG = 40.0           # how far the hand may be turned from a sample
+# Longer than the shaka's 0.25 s: hands are in view all day, and a custom sign
+# is matched less strictly than a built-in posture.
+SIGN_HOLD_S = 0.6
+SIGN_COOLDOWN_S = 1.0               # min time between any two custom signs firing
+SIGN_RELEASE_GRACE_S = 0.15         # a dropped frame or two doesn't restart the hold
+# Recording a sign in Home: a countdown to get the hand up, then this long of
+# samples. The hand must be seen in at least SIGN_RECORD_MIN_SEEN of frames.
+SIGN_RECORD_COUNTDOWN_S = 3
+SIGN_RECORD_S = 3.0
+SIGN_RECORD_MIN_SEEN = 0.6
+SIGN_RECORD_MIN_SAMPLES = 15
+# Warn when this share of a recording looks like a built-in or another sign.
+SIGN_SIMILAR_SHARE = 0.3
+
+# ---------------------------------------------------------------------------
 # Hold gesture: both palms up and still -> pause / resume every other gesture
 # ---------------------------------------------------------------------------
 # One flat hand swipes; two of them, held still, are the master switch. While
@@ -166,10 +189,16 @@ HOLD_RELEASE_GRACE_S = 0.20
 HOLD_MAX_DRIFT = 0.07
 
 # ---------------------------------------------------------------------------
-# Exit gesture: cross both hands into an "X"
+# Exit gesture: cross your index and middle fingers, like crossing fingers
 # ---------------------------------------------------------------------------
-EXIT_HOLD_S = 0.7                   # hold the X this long to quit (safety)
-EXIT_MIN_ANGLE_DEG = 25.0           # the two hands must actually cross, not align
+# One hand, so it still works when the other is out of view, unlike the two
+# hands overlapping, which MediaPipe loses track of.
+EXIT_HOLD_S = 0.7                   # hold the crossed fingers this long to quit
+# The fingertips' sideways gap, as a share of the gap between their knuckles:
+# about 1 for two fingers side by side, 0 when the tips meet, negative once
+# they have swapped sides. At or below this the fingers count as crossed.
+# Raise it if crossing is missed; lower it if a peace sign sets it off.
+EXIT_CROSS_RATIO = 0.3
 
 # ---------------------------------------------------------------------------
 # UI / theme  — clean, flat, professional (no glow, restrained colour)
@@ -209,12 +238,15 @@ COLOR_ACCENT = (240, 237, 237)      # was a gold accent; now near-white. Marks
                                      # chevrons, the exit progress bar.
 COLOR_OK = (126, 186, 134)          # muted green status dot (live state)
 COLOR_IDLE = (101, 92, 92)          # grey status dot
+# "Try it" in Home: the sign was recognised. Brighter than COLOR_OK on
+# purpose -- it has to read at a glance over live video.
+COLOR_TRIAL = (94, 200, 63)         # green pulse, then frame          #3FC85E
 
 PANEL_ALPHA = 0.80                  # opacity of the flat panels
 SHADOW_ALPHA = 0.28                 # soft drop shadow behind panels
 
 # The gestures as the Home window lists them, grouped the way a settings page
-# groups related options rather than as one flat run of ten.
+# groups related options rather than as one flat run of eleven.
 # Each row is (icon id, what it does, how you do it) -- the icon id looks up
 # both the sketch in assets/tutorial-gestures/ (see
 # ui_overlay._GESTURE_ICON_FILES) and the per-gesture on/off state (see
@@ -227,19 +259,25 @@ GESTURE_GROUPS = (
         ("point_hold", "Drag", "Hold the point for half a second"),
         ("two_finger", "Scroll", "Index and middle finger, move up or down"),
     )),
-    ("Windows", (
+    # The built-in signs. Their label is only the default: Home shows
+    # whatever action each one is bound to (actions.py).
+    ("Signs", (
+        ("shaka", "New chat", "Thumb and little finger out"),
         ("flat_down", "Minimize", "Open palm, swipe down"),
         ("flat_up", "Restore", "Open palm, swipe up"),
         ("flat_left", "Switch window", "Open palm, swipe left"),
+        ("flat_right", "Swipe right", "Open palm, swipe right"),
     )),
-    ("Shortcuts", (
-        ("shaka", "New chat", "Thumb and pinky out"),
-        ("cross", "Exit", "Cross both hands into an X"),
-    )),
+    # Safety controls: always the same job, never rebindable.
     ("Session", (
         ("both_flat", "Hold", "Both palms up to pause all"),
+        ("cross", "Exit", "Cross your index and middle fingers"),
     )),
 )
+
+# The rows that belong to the cursor module. With cursor control off (the
+# default, see settings.Settings.cursor) they are shown but greyed out.
+CURSOR_GESTURES = frozenset({"thumb", "point", "point_hold", "two_finger"})
 
 # Flat (icon id, label) view of GESTURE_GROUPS in display order. The gesture
 # gating and the per-gesture toggle state iterate over this, so the grouping
@@ -251,3 +289,14 @@ GESTURE_TUTORIAL = tuple(
 # Feedback timings (seconds).
 CLICK_FLASH_S = 0.16
 TOAST_S = 1.2
+# "Try it": when the sign is recognised a thin green frame appears and stays
+# until the action editor closes; the frame itself never changes. Each
+# recognition sends one quick gleam from the frame into the picture. Rise
+# within the ~100 ms that reads as instant, fade with an ease-out, 450 ms in
+# all: inside the usual 200-500 ms for UI feedback (NN/g) and Material's
+# short-to-medium motion durations, so it confirms without lingering.
+TRIAL_FRAME_PX = 2                  # the frame's width (design px), constant
+TRIAL_GLOW_IN_S = 0.08              # gleam rises
+TRIAL_GLOW_OUT_S = 0.37             # gleam fades (ease-out)
+TRIAL_GLOW_ALPHA = 0.55             # gleam strength at the frame, 0..1
+TRIAL_GLOW_DEPTH_PX = 36            # how far it reaches in (design px)

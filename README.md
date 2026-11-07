@@ -6,7 +6,7 @@ and run window shortcuts with a wave — no extra hardware, just your laptop's
 built-in camera.
 
 ![python](https://img.shields.io/badge/python-3.10%2B-blue)
-![license](https://img.shields.io/badge/license-MIT-green)
+![license](https://img.shields.io/badge/license-FCL--1.0--MIT-blue)
 ![platform](https://img.shields.io/badge/platform-Windows%20%C2%B7%20macOS%20%C2%B7%20Linux-lightgrey)
 
 Built on MediaPipe's `HandLandmarker` (live-stream, two hands), OpenCV for
@@ -34,6 +34,10 @@ set FINGERINO_MODEL=C:\path\to\hand_landmarker.task     # Windows
 export FINGERINO_MODEL=/path/to/hand_landmarker.task    # macOS / Linux
 ```
 
+If you bind a sign to a website, Fingerino hands the address to your browser,
+the same as clicking a link; your browser fetches it, not Fingerino. A sign
+bound to a command runs exactly the command you typed, on your computer.
+
 **What it needs, and why:**
 
 | Permission | Why | Platform |
@@ -47,7 +51,9 @@ export FINGERINO_MODEL=/path/to/hand_landmarker.task    # macOS / Linux
 | --- | --- |
 | `hand_landmarker.task` | The downloaded model (absent if your installer bundled it) |
 | `fingerino-v1.ico` | The app icon, drawn on first run |
-| `settings.json` | Which gestures you switched off, and whether you've seen the welcome |
+| `settings.json` | Which gestures you switched off, whether the cursor and the hand skeleton are on, and whether you've seen the welcome |
+| `actions.json` | What you changed your signs to do (shortcuts, apps, links, commands) |
+| `signs.json` | Signs you recorded: a name and the positions of 21 hand joints per sample — never an image |
 | `selftest.txt` | Written by `--selftest`, for when you need to report a problem |
 | `crash.txt` | Written only if Fingerino crashes |
 
@@ -67,6 +73,11 @@ antivirus may object to an app that watches a camera and moves the mouse.
 
 ## Gestures
 
+The first four rows are the **cursor**, which is **off by default**: until you
+turn on *Control the cursor with your hand* on the Gestures page, Fingerino
+never moves the mouse, and pointing or two fingers do nothing. Everything else
+works either way.
+
 | Gesture | Action |
 | --- | --- |
 | **Thumb** tip | Move the cursor |
@@ -78,7 +89,7 @@ antivirus may object to an app that watches a camera and moves the mouse.
 | **Flat hand**, swipe **left** | Switch window (Alt+Tab) |
 | **Shaka** — thumb + pinky out ("call me") | Open a new AI chat (Alt+Space) |
 | **Both palms up**, held still ~1s | Hold: pause every gesture — again to resume |
-| **Cross both hands** into an "X", hold | Quit the app |
+| **Cross your index and middle fingers**, hold ~0.7s | Quit the app |
 
 A quick point is a plain click and holds nothing down — so the cursor drift of
 your hand changing shape can't smear it into a stray drag. Keep the index out
@@ -90,6 +101,14 @@ button is held.
 Rest with your fingers relaxed to stay in plain **Move** mode. The status pill
 (top-left) turns green when a hand is tracked; the pill beside it shows the
 current mode.
+
+**Your own signs.** On the Gestures page, *Record a sign* asks you to hold
+a hand shape in front of the camera for three seconds, then to name it and
+choose what it does: a keyboard shortcut, a media key, an app, a website or
+file, or a command. Hold the sign for about half a second to use it. Fingerino
+warns you if the shape looks like a built-in sign or one you already have,
+since it couldn't tell those apart. Any built-in sign can be given a
+different job the same way, with **Change**.
 
 **Hold** is the master switch, for when you want your hands back: raise both
 palms, keep them still for about a second, and everything stops driving the
@@ -207,8 +226,11 @@ tracking start as soon as Fingerino opens, turn that on in **Settings**.
 | `main.py` | Entry point: command line, `--selftest`, single instance, crash reports. |
 | `hand_tracker.py` | Wraps `HandLandmarker` (LIVE_STREAM); returns landmarks per hand. |
 | `cursor_controller.py` | Thumb → screen mapping, One Euro smoothing, `pynput` move + button + scroll. |
-| `gesture_detector.py` | `GestureEngine`: posture → mode + click / drag / scroll / swipe / shaka / hold / exit. |
-| `system_actions.py` | OS keyboard shortcuts (minimize / restore / Alt+Tab / new chat). |
+| `gesture_detector.py` | `GestureEngine`: posture → mode + click / drag / scroll / hold / exit, and named signs (shaka, swipes). |
+| `actions.py` | The registry that maps each sign to its action, and `actions.json`. Recognising a sign and what it does are kept apart. |
+| `sign_matcher.py` | Recognises your own signs: normalised landmarks, nearest neighbour over recorded samples, orientation kept, weak matches rejected. |
+| `signs.py` | Your recorded signs and `signs.json`. |
+| `system_actions.py` | Carries actions out: built-in shortcuts, your own shortcuts, media keys, opening apps / links / files, commands. |
 | `ui_overlay.py` | All HUD drawing (flat, professional theme). |
 | `engine.py` | One tracking session: camera in, cursor and shortcuts out, on a background thread. |
 | `shell.py`, `qml/Home.qml`, `hud.py` | Home window, HUD, tray icon and hotkey (PySide6 / Qt). |
@@ -231,8 +253,8 @@ runs when the hand leaves the frame and on every shutdown, and it never stays
 down longer than `DRAG_MAX_S`. Destructive gestures (Exit, and the shaka
 new-chat) must be **held** briefly to guard against accidents.
 
-Two-hand postures are resolved before anything else: crossed hands are Exit,
-two open palms are Hold, and both shut the one-hand paths out entirely — which
+Crossed fingers (Exit) are resolved before anything else, then two open palms
+(Hold); both shut the one-hand paths out entirely — which
 is why raising both hands to pause can't wave a window away on the way up. Hold
 is a mode rather than a mass toggle, so the per-gesture switches in Home
 are left untouched and resuming restores exactly the set that was live.
@@ -293,7 +315,12 @@ The **window-management gestures** send different keys per platform, in
 
 On macOS, F11 only works if **Show Desktop** is still bound to it in System
 Settings › Keyboard › Keyboard Shortcuts › Mission Control. Linux sends the
-Windows set; remap it in `system_actions.py` for your desktop.
+Windows set; on any platform you can give a sign a different job from the
+Gestures page instead (**Change**).
+
+Your own actions work on all three: shortcuts and media keys are sent through
+`pynput`; apps, links and files open with `os.startfile` on Windows, `open` on
+macOS and `xdg-open` on Linux; commands run through the system shell.
 
 macOS also needs **Accessibility** permission before any of this works — see
 [The first launch](#the-first-launch). DPI-aware screen sizing is applied
@@ -333,6 +360,43 @@ fingerino --debug
 
 The `--debug` flag overlays the raw skeleton, FPS, and current mode — handy for
 tuning thresholds.
+
+## Next steps
+
+Planned work, roughly in order:
+
+1. **Try the sign features with a real camera.** Record a sign, bind the shaka
+   to a link, check that nothing fires by accident, and check actions on macOS
+   (CI only runs Windows and Linux).
+2. **Design review against Apple's Human Interface Guidelines.** Install
+   [apple-design-skill](https://github.com/dickwu/apple-design-skill) for
+   Claude Code and run it on the Home window (`fingerino/qml/Home.qml` plus
+   screenshots), then fix what it finds on its own branch:
+
+   ```bash
+   npx skills add dickwu/apple-design-skill -a claude-code -g
+   # then, in Claude Code: /apple-design review the Home window
+   ```
+
+   The skill bundles Apple's own guideline text and has no licence file, so it
+   is installed per developer and not vendored into this repo.
+3. **Security checks.** Signs can now run commands and open apps, files and
+   links, so before the next release:
+   - run Claude Code's `/security-review` on the changes since v0.2.0;
+   - run `pip-audit` for known vulnerabilities in dependencies, and turn on
+     Dependabot alerts and secret scanning on GitHub;
+   - keep ruff's `S` (Bandit) rules passing, with every `noqa: S…` justified;
+   - review the action paths in `system_actions.py`: commands only run when
+     approved, and apps, files and links never go through a shell;
+   - decide how far to trust `actions.json` and `signs.json`: another program
+     running as you could edit them, so consider confirming commands again on
+     first run after the file changes.
+4. **Measure false triggers.** A dry run that logs matches without acting,
+   then tune the `SIGN_*` thresholds in `config.py`.
+5. **Always-on mode.** Lower the frame rate when the cursor is off, and
+   recover quietly when a video call takes the camera.
+6. **Sign packs.** Export and import signs; an imported command never runs
+   until you approve it.
 
 ## Building the installers
 
@@ -386,4 +450,17 @@ who aren't going to read instructions, signing is what fixes that:
 
 ## License
 
-[MIT](LICENSE) © cky
+Fingerino is **source-available** under the [Fair Core License, version 1.0,
+with MIT as the future license](LICENSE) (FCL-1.0-MIT), © cky.
+
+In short, and the [LICENSE](LICENSE) is what counts:
+
+- You may read, use, change and share the code, for yourself or inside your
+  company, and for non-commercial teaching and research.
+- You may not use it to offer a product or service that competes with
+  Fingerino, and you may not remove or get around its licence-key checks.
+- Each version becomes plain MIT two years after it is released.
+
+Versions up to and including **v0.2.0** were released under the
+[MIT License](https://github.com/cky-gitHub/fingerino/blob/v0.2.0/LICENSE) and
+stay MIT. Fingerino Premium is a separate, closed add-on.

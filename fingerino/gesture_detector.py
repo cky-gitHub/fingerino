@@ -8,9 +8,15 @@ discrete events each frame:
     index out, middle in -> move      -> drive cursor; a brief point clicks,
                                          a held one presses and drags
     index + middle out   -> scroll    -> vertical fingertip motion scrolls
-    flat hand (4 out)    -> flat      -> a downward wave minimises windows
+    flat hand (4 out)    -> flat      -> a swipe emits a flat_<direction> sign
+    thumb + pinky out    -> shaka     -> held briefly, emits the shaka sign
     both hands flat      -> hold      -> hold both palms still to pause
-    both hands crossed   -> exit      -> hold the "X" briefly to quit
+    crossed fingers      -> exit      -> hold briefly to quit
+
+Signs are only *named* here. What a sign does is looked up in
+``actions.Registry``, so the detector never decides that a shaka means "open a
+chat". The cursor (move, click, drag, scroll), Hold and Exit are not signs:
+they are the pointer and the session's safety controls, and stay wired in.
 
 All thresholds live in ``config``. Every posture test is built from distances
 to the wrist, so it is rotation-invariant — the gestures work whichever way
@@ -24,10 +30,11 @@ from __future__ import annotations
 
 import math
 from collections import deque
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import NamedTuple
 
 from . import config
+from .sign_matcher import Matcher, SignHold
 
 Landmark = tuple[float, float, float]
 Landmarks = list[Landmark]
@@ -164,28 +171,23 @@ def is_shaka(lms: Landmarks) -> bool:
     )
 
 
-# ---------------------------------------------------------------------------
-# Geometry for the two-hand "X"
-# ---------------------------------------------------------------------------
-def _ccw(a, b, c) -> float:
-    return (c[1] - a[1]) * (b[0] - a[0]) - (b[1] - a[1]) * (c[0] - a[0])
+def is_crossed_fingers(lms: Landmarks) -> bool:
+    """Index and middle out and crossed, ring and pinky in -- the Exit posture.
 
-
-def _segments_cross(p1, p2, p3, p4) -> bool:
-    d1, d2 = _ccw(p3, p4, p1), _ccw(p3, p4, p2)
-    d3, d4 = _ccw(p1, p2, p3), _ccw(p1, p2, p4)
-    return (d1 > 0) != (d2 > 0) and (d3 > 0) != (d4 > 0)
-
-
-def _cross_angle_deg(p1, p2, p3, p4) -> float:
-    v1 = (p2[0] - p1[0], p2[1] - p1[1])
-    v2 = (p4[0] - p3[0], p4[1] - p3[1])
-    n1, n2 = math.hypot(*v1), math.hypot(*v2)
-    if n1 == 0 or n2 == 0:
-        return 0.0
-    c = max(-1.0, min(1.0, (v1[0] * v2[0] + v1[1] * v2[1]) / (n1 * n2)))
-    a = math.degrees(math.acos(c))
-    return min(a, 180.0 - a)  # undirected crossing angle
+    Crossed means the fingertips have changed sides, or met, compared with
+    their knuckles. That is read along the line between the two knuckles, so
+    it holds however the hand is turned.
+    """
+    m = config.FINGER_EXTEND_MARGIN
+    if not (_extended(lms, _INDEX, m) and _extended(lms, _MIDDLE, m)
+            and not _extended(lms, _RING, m) and not _extended(lms, _PINKY, m)):
+        return False
+    ux, uy = lms[_MIDDLE_MCP][0] - lms[_INDEX_MCP][0], lms[_MIDDLE_MCP][1] - lms[_INDEX_MCP][1]
+    tx, ty = lms[_MIDDLE_TIP][0] - lms[_INDEX_TIP][0], lms[_MIDDLE_TIP][1] - lms[_INDEX_TIP][1]
+    knuckles = ux * ux + uy * uy
+    if knuckles == 0:
+        return False
+    return (tx * ux + ty * uy) / knuckles <= config.EXIT_CROSS_RATIO
 
 
 # ---------------------------------------------------------------------------
@@ -298,11 +300,27 @@ class DragTrigger:
 
 
 # ---------------------------------------------------------------------------
+# Signs
+# ---------------------------------------------------------------------------
+# The built-in signs, by id. Each id is also the key of its on/off switch in
+# Home (config.GESTURE_TUTORIAL / settings.json), which is why the swipes are
+# named after their icons rather than after what they happen to do today.
+SIGN_SHAKA = "shaka"
+SIGN_FLAT_DOWN = "flat_down"
+SIGN_FLAT_UP = "flat_up"
+SIGN_FLAT_LEFT = "flat_left"
+# Detected and emitted, but bound to nothing by default and so not listed in
+# Home -- it has always been seen and ignored.
+SIGN_FLAT_RIGHT = "flat_right"
+BUILTIN_SIGNS = (SIGN_SHAKA, SIGN_FLAT_DOWN, SIGN_FLAT_UP, SIGN_FLAT_LEFT, SIGN_FLAT_RIGHT)
+
+
+# ---------------------------------------------------------------------------
 # Engine
 # ---------------------------------------------------------------------------
 @dataclass
 class GestureOutput:
-    mode: str = "none"          # none | move | scroll | flat | shaka | hold | exit
+    mode: str = "none"  # none | idle | move | scroll | flat | shaka | sign | hold | exit
     mode_label: str = ""
     click: bool = False         # a short point — a discrete left click
     press: bool = False         # left button just went down (drag starting)
@@ -310,10 +328,13 @@ class GestureOutput:
     dragging: bool = False      # button currently held
     drag_progress: float = 0.0  # 0..1 while a point is arming into a drag
     scroll_steps: int = 0
-    minimize: bool = False      # flat swipe down
-    restore: bool = False       # flat swipe up
-    switch_window: bool = False  # flat swipe left (Alt+Tab)
-    new_chat: bool = False      # shaka sign
+    # Signs completed on this frame, by id (see BUILTIN_SIGNS). What each one
+    # does is up to actions.Registry, not the detector.
+    signs: list[str] = field(default_factory=list)
+    # A sign being held towards firing (the shaka, or one of the user's), so
+    # the HUD can name it, and how far a user's sign has come (0..1).
+    pending_sign: str | None = None
+    sign_progress: float = 0.0
     hold_toggle: bool = False   # both palms held still — pause / resume
     hold_progress: float = 0.0  # 0..1 while both palms are being held
     exit: bool = False
@@ -324,7 +345,23 @@ class GestureOutput:
 
 
 class GestureEngine:
-    def __init__(self) -> None:
+    """Per-frame classifier. ``cursor`` says whether the pointer module is on.
+
+    With the cursor off, nothing here can produce a click, press or scroll,
+    and the pointing and two-finger poses are left unclaimed -- free for
+    signs. Turning it off mid-drag needs nothing special: the button trigger
+    just stops seeing the point and lets go through its usual release path.
+    """
+
+    def __init__(self, cursor: bool = True) -> None:
+        self.cursor = cursor
+        # The user's signs (sign_matcher.Matcher) and their names, swapped in
+        # whole by the session whenever they change.
+        self.matcher: Matcher | None = None
+        self.sign_names: dict[str, str] = {}
+        self._sign_hold = SignHold()
+        self._sign_seen: str | None = None
+        self._handedness: str | None = None
         self._drag = DragTrigger()
         self._scroll_prev_y: float | None = None
         self._scroll_acc = 0.0
@@ -383,18 +420,12 @@ class GestureEngine:
 
     # -- sub-behaviours ------------------------------------------------------
     def _check_exit(self, hands: list[Landmarks], now: float) -> float:
-        if len(hands) < 2:
+        if not any(is_crossed_fingers(h) for h in hands):
             self._x_start = None
             return 0.0
-        a1, a2 = hands[0][_WRIST][:2], hands[0][_MIDDLE_TIP][:2]
-        b1, b2 = hands[1][_WRIST][:2], hands[1][_MIDDLE_TIP][:2]
-        if _segments_cross(a1, a2, b1, b2) and \
-                _cross_angle_deg(a1, a2, b1, b2) >= config.EXIT_MIN_ANGLE_DEG:
-            if self._x_start is None:
-                self._x_start = now
-            return min(1.0, (now - self._x_start) / config.EXIT_HOLD_S)
-        self._x_start = None
-        return 0.0
+        if self._x_start is None:
+            self._x_start = now
+        return min(1.0, (now - self._x_start) / config.EXIT_HOLD_S)
 
     def _check_hold(self, hands: list[Landmarks], now: float,
                     out: GestureOutput) -> None:
@@ -466,9 +497,22 @@ class GestureEngine:
         return direction
 
     # -- main entry ----------------------------------------------------------
-    def update(self, hands: list[Landmarks], now: float) -> GestureOutput:
+    def update(self, hands: list[Landmarks], now: float,
+               handedness: list[str] | None = None) -> GestureOutput:
+        """Classify one frame. ``handedness`` ("Left"/"Right" per hand, as
+        MediaPipe reports it) only helps the user's signs work with either
+        hand; everything else ignores it."""
         out = GestureOutput()
+        self._sign_seen = None
+        self._handedness = handedness[0] if handedness else None
         pointing = self._classify(hands, now, out)
+
+        fired, pending, progress = self._sign_hold.update(self._sign_seen, now)
+        if fired is not None:
+            out.signs.append(fired)
+        if pending is not None:
+            out.pending_sign = pending
+            out.sign_progress = progress
 
         # The button is driven from exactly one place, so every way of leaving
         # the posture — relaxing the finger, switching to another gesture,
@@ -499,7 +543,7 @@ class GestureEngine:
             self._expire_hold(now)
             return False
 
-        # Two-hand "X" takes priority and suppresses everything else.
+        # Crossed fingers take priority and suppress everything else.
         progress = self._check_exit(hands, now)
         if progress > 0.0:
             self._scroll_prev_y = None
@@ -535,21 +579,14 @@ class GestureEngine:
             out.mode = "flat"
             out.mode_label = "Flat"
             direction = self._flat_swipe(primary, now)
-            if direction == "down":
-                out.minimize = True
-                out.mode_label = "Minimize"
-            elif direction == "up":
-                out.restore = True
-                out.mode_label = "Restore"
-            elif direction == "left":
-                out.switch_window = True
-                out.mode_label = "Switch"
+            if direction is not None:
+                out.signs.append(f"flat_{direction}")
             return False
 
         self._swipe.clear()
 
-        # Two fingers -> scroll.
-        if is_two_finger(primary):
+        # Two fingers -> scroll. Part of the cursor module.
+        if self.cursor and is_two_finger(primary):
             self._reset_shaka()
             out.mode = "scroll"
             out.mode_label = "Scroll"
@@ -558,23 +595,39 @@ class GestureEngine:
 
         self._scroll_prev_y = None
 
-        # Shaka sign -> new AI chat (held briefly to avoid accidents).
+        # Shaka sign, held briefly to avoid accidents.
         if is_shaka(primary):
             out.mode = "shaka"
-            out.mode_label = "New chat"
+            out.mode_label = "Shaka"
+            out.pending_sign = SIGN_SHAKA
             if self._shaka_start is None:
                 self._shaka_start = now
             if (now - self._shaka_start >= config.SHAKA_HOLD_S
                     and not self._shaka_fired
                     and now - self._last_shaka_t > config.SHAKA_COOLDOWN_S):
-                out.new_chat = True
+                out.signs.append(SIGN_SHAKA)
                 self._shaka_fired = True
                 self._last_shaka_t = now
             return False
 
         self._reset_shaka()
 
-        # Default: move, and point to click / hold the point to drag.
+        # The user's own signs. After every built-in, so none of those can be
+        # taken over by a recorded sign; and with the cursor on, pointing stays
+        # a click rather than being read as a sign.
+        if self.matcher and not (self.cursor and is_pointing(primary)):
+            match = self.matcher.match(primary, self._handedness)
+            if match is not None:
+                self._sign_seen = match.sign_id
+                out.mode = "sign"
+                out.mode_label = self.sign_names.get(match.sign_id, "Sign")
+                return False
+
+        # Default: move, and point to click / hold the point to drag -- or,
+        # with the cursor off, nothing at all.
+        if not self.cursor:
+            out.mode = "idle"
+            return False
         out.mode = "move"
         out.mode_label = "Move"
         return is_pointing(primary)

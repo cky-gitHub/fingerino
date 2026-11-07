@@ -2,8 +2,10 @@
 
 Neutral greys throughout, hairline strokes, state carried by brightness
 rather than hue; the status dot is the only thing that stays coloured,
-because it reports a live condition. Text is rendered with PIL for crisp
-anti-aliasing. The raw skeleton and FPS live behind ``debug``.
+because it reports a live condition -- and the green "Try it" frame and
+gleam, which confirm that the sign being tried was recognised. Text is rendered with PIL for crisp
+anti-aliasing. The hand skeleton is a setting (and always on while a sign is
+recorded); FPS lives behind ``debug``.
 
 Everything here is drawn *onto the camera frame* at the camera's native
 resolution, which the HUD window then shrinks to its own size; :meth:`UIOverlay.s`
@@ -163,6 +165,10 @@ class UIOverlay:
         # queued PIL text draws and icon pastes for the single compositing pass
         self._texts: list[tuple] = []
         self._icons: list[tuple[Image.Image, int, int]] = []
+        # "Try it": when the tried sign was last recognised (None: not yet).
+        self._trial_seen_t: float | None = None
+        self._glow_key: tuple[int, int] | None = None
+        self._glow: np.ndarray = np.zeros((1, 1, 1), np.float32)
 
     def s(self, v: float) -> int:
         """Scale a design-space size into frame-space.
@@ -249,6 +255,53 @@ class UIOverlay:
             radius = self.s(9) + int(p * self.s(13))
             _blend_ring(frame, (x, y), radius, config.COLOR_ACCENT,
                         max(0.0, (1.0 - p) * 0.9), thickness=self.s(1))
+
+    def trial_recognised(self) -> None:
+        """The sign under "Try it" just fired: pulse, then keep the frame."""
+        self._trial_seen_t = time.time()
+
+    def _trial_glow_strength(self, now: float) -> float:
+        """0..1: how strong the gleam is ``now``; quick rise, eased fade."""
+        if self._trial_seen_t is None:
+            return 0.0
+        t = now - self._trial_seen_t
+        if t < 0.0:
+            return 0.0
+        if t < config.TRIAL_GLOW_IN_S:
+            return t / config.TRIAL_GLOW_IN_S
+        u = (t - config.TRIAL_GLOW_IN_S) / config.TRIAL_GLOW_OUT_S
+        return 0.0 if u >= 1.0 else (1.0 - u) ** 2      # ease-out
+
+    def _glow_mask(self, h: int, w: int) -> np.ndarray:
+        """Per-pixel falloff from the frame's edge inwards, cached per size."""
+        key = (h, w)
+        if self._glow_key != key:
+            depth = max(1.0, float(self.s(config.TRIAL_GLOW_DEPTH_PX)))
+            ys = np.minimum(np.arange(h), np.arange(h)[::-1]).astype(np.float32)
+            xs = np.minimum(np.arange(w), np.arange(w)[::-1]).astype(np.float32)
+            edge = np.minimum(ys[:, None], xs[None, :])
+            falloff = np.clip(1.0 - edge / depth, 0.0, 1.0) ** 2
+            self._glow = falloff[..., None].astype(np.float32)
+            self._glow_key = key
+        return self._glow
+
+    def _draw_trial(self, frame, trial: bool) -> None:
+        """A constant thin green frame once the tried sign has been
+        recognised, and a brief gleam from it into the picture each time it
+        is. Nothing before the first recognition."""
+        if not trial:
+            self._trial_seen_t = None
+            return
+        if self._trial_seen_t is None:
+            return
+        h, w = frame.shape[:2]
+        k = self._trial_glow_strength(time.time())
+        if k > 0.0:
+            alpha = self._glow_mask(h, w) * (config.TRIAL_GLOW_ALPHA * k)
+            green = np.array(config.COLOR_TRIAL, dtype=np.float32)
+            frame[:] = (frame * (1.0 - alpha) + green * alpha).astype(np.uint8)
+        thin = self.s(config.TRIAL_FRAME_PX)
+        cv2.rectangle(frame, (0, 0), (w - 1, h - 1), config.COLOR_TRIAL, thin * 2)
 
     def _palm_px(self, hand_px):
         xs = sum(hand_px[i][0] for i in _PALM_POINTS) / len(_PALM_POINTS)
@@ -422,12 +475,16 @@ class UIOverlay:
     # -- public --------------------------------------------------------------
     def draw(self, frame, *, tracking, mode="none", mode_label="", cursor_px=None,
              zone_px, hands_px=None, exit_progress=0.0, dragging=False,
-             drag_progress=0.0, debug=False, fps=0.0,
-             paused=False, hold_progress=0.0) -> np.ndarray:
-        self._draw_zone(frame, zone_px, tracking)
+             drag_progress=0.0, debug=False, skeleton=False, fps=0.0,
+             paused=False, hold_progress=0.0, sign_progress=0.0,
+             record_progress=0.0, trial=False) -> np.ndarray:
+        # No control zone without the cursor: it maps the hand to the screen.
+        if zone_px is not None:
+            self._draw_zone(frame, zone_px, tracking)
 
-        if debug and hands_px:
+        if (skeleton or debug) and hands_px:
             self._draw_skeleton(frame, hands_px)
+        self._draw_trial(frame, trial)
 
         # None of the per-mode chrome is drawn while paused: a reticle that
         # doesn't move the cursor, or scroll chevrons that scroll nothing,
@@ -448,6 +505,11 @@ class UIOverlay:
             self._draw_hold_prompt(
                 frame, "Hold to resume" if paused else "Hold to pause",
                 hold_progress)
+        elif record_progress > 0.0:
+            self._draw_hold_prompt(frame, "Recording your sign", record_progress)
+        elif sign_progress > 0.0 and not paused and mode_label:
+            # One of the user's signs filling up towards firing.
+            self._draw_hold_prompt(frame, mode_label, sign_progress)
         self._draw_toasts(frame)
 
         if debug:
