@@ -20,7 +20,7 @@ code, and the cursor is an optional module that is off by default.
   4. Sign matcher (`fingerino/sign_matcher.py`), no UI.
   5. Recording signs in Home (`fingerino/signs.py`, `signs.json`): record,
      name, bind, rename, switch off, delete, "Recognised" feedback.
-- **Tests:** 297 pass, 1 skipped, with all dependencies (the dependency-free
+- **Tests:** 310 pass, 1 skipped, with all dependencies (the dependency-free
   job runs fewer). First real-camera check done on Windows, see below.
 
 ## What needs doing next
@@ -88,15 +88,21 @@ code, and the cursor is an optional module that is off by default.
    - Repeat the action checks on macOS; there is no macOS CI job.
    - If recognition feels too strict or loose, tune `SIGN_MATCH_MAX_DIST`,
      `SIGN_MAX_ANGLE_DEG` and `SIGN_HOLD_S` in `fingerino/config.py`.
-2. **Design review.** Install
-   [apple-design-skill](https://github.com/dickwu/apple-design-skill)
-   (`npx skills add dickwu/apple-design-skill -a claude-code -g`), run
-   `/apple-design` on `fingerino/qml/Home.qml` plus screenshots, fix on its own
-   branch. Likely findings: every row is the same bordered box; custom sign
-   cards show three buttons beside a switch (a "…" menu would be calmer); the
-   accent blue marks both switches and primary buttons; custom signs and the
-   swipe-right row have no picture. Don't vendor the skill into this repo: it
-   has no licence file and is mostly Apple's text.
+2. **Design review.** Done 2026-11-06 on branch `design-review` (from
+   `signs-core`; rebase onto `main` once PR #8 is merged). Review with the
+   apple-design skill (installed globally, not vendored: no licence file).
+   Fixed: theme-aware status colours (dark/light pairs, >= 4.5:1, guarded by
+   tests/test_home_design.py); rows titled by the sign, action underneath;
+   pointer switches show off while the cursor is off; one grouped container
+   per section; type follows Windows' Text size (`shell.text_scale`);
+   ellipses on buttons that open dialogs; editable pause shortcut; Quit on
+   Home; "Make your own sign" card on Home and own signs first on Gestures;
+   a Theme setting (system / light / dark). Rule: only built-in signs have a
+   picture; custom signs have none (tried skeleton drawings, dropped). Not done, by decision: the warning badge's keyboard
+   access (finding 5). Waiting on artwork: crossed-fingers and swipe-right
+   pictures, and SVG versions of all drawings that read in light mode
+   (the PNG strokes are 2.85:1 on light cards). macOS title case and an app
+   menu with Cmd-, are open platform notes.
 3. **Security checks** before the next release (also in the README's Next
    steps): `/security-review` on changes since v0.2.0; `pip-audit`;
    Dependabot alerts and secret scanning on GitHub; keep ruff's `S` rules
@@ -150,6 +156,12 @@ code, and the cursor is an optional module that is off by default.
   free" decision: free gets a small number of custom signs (1 to 3, to be
   decided), Premium about 20. The limit is licence-key functionality, which
   FCL forbids circumventing.
+- Free tier (decided 2026-11-07): 1 custom sign plus every built-in sign.
+  New installs get a 14-day Premium trial (a "reverse trial"); when it ends,
+  extra signs are kept but switched off with "Unlock with Premium", never
+  deleted. Reaching the limit shows a short note on what Premium adds, not
+  a hard block. The trial start is stored locally and can be reset; that is
+  accepted.
 
 ## Keep intact
 

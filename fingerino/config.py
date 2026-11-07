@@ -275,6 +275,17 @@ GESTURE_GROUPS = (
     )),
 )
 
+# What each built-in sign is called on its Gestures row. The row's title is
+# the sign, never the action it runs, so the list reads the same for the
+# built-ins and for the user's own signs (the action goes underneath).
+SIGN_TITLES = {
+    "shaka": "Shaka",
+    "flat_down": "Swipe down",
+    "flat_up": "Swipe up",
+    "flat_left": "Swipe left",
+    "flat_right": "Swipe right",
+}
+
 # The rows that belong to the cursor module. With cursor control off (the
 # default, see settings.Settings.cursor) they are shown but greyed out.
 CURSOR_GESTURES = frozenset({"thumb", "point", "point_hold", "two_finger"})

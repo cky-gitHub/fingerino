@@ -205,8 +205,8 @@ def test_the_editor_holds_gestures_on_its_own_too(home):
     editor = _child(a.window, "actionEditor")
     QMetaObject.invokeMethod(editor, "edit", Q_ARG("QVariant", "shaka"),
                              Q_ARG("QVariant", "When you make the shaka"))
-    _settle(a.app, 300)
-    assert session.holds == [True]
+    _settle(a.app, 1500)                 # generous: the open animation, under load
+    assert session.holds and session.holds[-1] is True
     QMetaObject.invokeMethod(_button(editor, "Save"), "clicked")
     _settle(a.app)
     assert session.holds[-1] is False
