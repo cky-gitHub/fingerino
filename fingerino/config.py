@@ -173,6 +173,21 @@ SIGN_RECORD_MIN_SAMPLES = 15
 SIGN_SIMILAR_SHARE = 0.3
 
 # ---------------------------------------------------------------------------
+# Premium (licence.py): the free tier as decided on 2026-11-07
+# ---------------------------------------------------------------------------
+# How many of your own signs can be switched on at once. Signs past the limit
+# are kept, never deleted, and come back when Premium is unlocked.
+FREE_CUSTOM_SIGNS = 1
+# Premium's own cap keeps matching quick: every live frame is compared with
+# every sample of every active sign.
+PREMIUM_CUSTOM_SIGNS = 20
+TRIAL_DAYS = 14                     # Premium trial from a new install's first launch
+# How often a running Fingerino checks whether the trial has ended.
+PREMIUM_RECHECK_S = 3600
+# Opened in the browser by "Get Premium"; Fingerino itself requests nothing.
+PREMIUM_URL = "https://github.com/cky-gitHub/fingerino#premium"
+
+# ---------------------------------------------------------------------------
 # Hold gesture: both palms up and still -> pause / resume every other gesture
 # ---------------------------------------------------------------------------
 # One flat hand swipes; two of them, held still, are the master switch. While

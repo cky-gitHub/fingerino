@@ -172,8 +172,14 @@ def test_held_gestures_still_let_exit_and_release_through(monkeypatch):
 @pytest.fixture
 def home(tmp_path):
     pytest.importorskip("PySide6")
+    import datetime as dt
+
     from fingerino import settings, shell
-    a = shell.Shell(settings.Settings(), str(tmp_path), None, tray=False, hotkey=False)
+
+    # In the Premium trial, so the sign limit (tests/test_premium_home.py)
+    # doesn't lock the second sign these tests record.
+    prefs = settings.Settings(trial_started=dt.date.today().isoformat())
+    a = shell.Shell(prefs, str(tmp_path), None, tray=False, hotkey=False)
     yield a, tmp_path
     a.close()
 
@@ -215,7 +221,7 @@ def test_record_name_bind_and_delete(home):
 
     assert a.bridge.setAction(sign_id, "open", "https://open.spotify.com/x", "") == ""
     (card,) = a.bridge.property("customSigns")
-    assert card == {"id": sign_id, "name": "Thumbs up", "enabled": True,
+    assert card == {"id": sign_id, "name": "Thumbs up", "enabled": True, "locked": False,
                     "action": "Open spotify.com", "warning": ""}
     # The matcher the session reads already knows it.
     assert a.library.matcher.match(thumbs_up(), "Right").sign_id == sign_id

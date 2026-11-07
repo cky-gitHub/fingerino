@@ -12,10 +12,11 @@ Environment switches (set by build.py):
 """
 
 import glob
+import importlib.util
 import os
 import sys
 
-from PyInstaller.utils.hooks import collect_all
+from PyInstaller.utils.hooks import collect_all, collect_submodules
 
 PACKAGING = SPECPATH
 ROOT = os.path.abspath(os.path.join(SPECPATH, os.pardir))
@@ -42,6 +43,12 @@ if IS_WIN:
     hiddenimports += ["pynput.keyboard._win32", "pynput.mouse._win32"]
 elif IS_MAC:
     hiddenimports += ["pynput.keyboard._darwin", "pynput.mouse._darwin"]
+
+# The Premium add-on is imported by name at runtime (fingerino/addons.py), so
+# the analyser can't see it. The official builds install it first; a build
+# from the public repository alone simply goes without.
+if importlib.util.find_spec("fingerino_premium") is not None:
+    hiddenimports += collect_submodules("fingerino_premium")
 
 # Ship the hand-landmark model inside the bundle: a packaged app has no console
 # to show download progress on, and it should work offline on first launch.

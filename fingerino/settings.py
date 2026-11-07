@@ -14,6 +14,7 @@ from __future__ import annotations
 import json
 import os
 from dataclasses import dataclass, field
+from datetime import date
 
 from . import config
 
@@ -55,12 +56,16 @@ class Settings:
     skeleton: bool = False
     # Home's appearance: "system" follows Windows, or "light" / "dark".
     theme: str = "system"
+    # The day the Premium trial began ("YYYY-MM-DD"), set on the first launch
+    # of a version that has one (main.py); "" before that. See licence.py.
+    trial_started: str = ""
 
     def to_json(self) -> dict:
         return {"schema": SCHEMA, "gestures": dict(self.gestures),
                 "onboarded": self.onboarded, "start_on_open": self.start_on_open,
                 "hotkey": self.hotkey, "cursor": self.cursor,
-                "skeleton": self.skeleton, "theme": self.theme}
+                "skeleton": self.skeleton, "theme": self.theme,
+                "trial_started": self.trial_started}
 
     @classmethod
     def from_json(cls, data: object) -> Settings:
@@ -91,6 +96,11 @@ class Settings:
             s.theme = data["theme"]
         if isinstance(data.get("hotkey"), str) and data["hotkey"].strip():
             s.hotkey = data["hotkey"]
+        if isinstance(data.get("trial_started"), str):
+            try:
+                s.trial_started = date.fromisoformat(data["trial_started"]).isoformat()
+            except ValueError:
+                pass
         return s
 
 

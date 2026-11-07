@@ -16,6 +16,7 @@ import os
 import sys
 import threading
 from collections.abc import Callable
+from datetime import date
 from pathlib import Path
 from typing import cast
 
@@ -42,7 +43,17 @@ from PySide6.QtQuick import QQuickWindow
 from PySide6.QtQuickControls2 import QQuickStyle
 from PySide6.QtWidgets import QApplication, QMenu, QSystemTrayIcon
 
-from . import __version__, actions, config, settings, signs, system_actions, winui
+from . import (
+    __version__,
+    actions,
+    addons,
+    config,
+    licence,
+    settings,
+    signs,
+    system_actions,
+    winui,
+)
 from .engine import Options, Session
 from .gesture_detector import BUILTIN_SIGNS
 from .hud import Hud
@@ -189,6 +200,7 @@ class Bridge(QObject):
     signsChanged = Signal()
     recordChanged = Signal()
     signFired = Signal(str)                 # a sign's id, as it fires
+    premiumChanged = Signal()
 
     def __init__(self, shell: Shell) -> None:
         super().__init__()
@@ -343,9 +355,13 @@ class Bridge(QObject):
         reg = self._shell.registry
         lib, cursor = self._shell.library, self._shell.prefs.cursor
         return [{"id": s.id, "name": s.name, "enabled": s.enabled,
+                 "locked": lib.locked(s.id),
                  "action": actions.describe(reg.action_for(s.id))["label"],
                  "warning": lib.warning(s.id, cursor)}
                 for s in lib.signs]
+
+    def _at_sign_limit(self) -> bool:
+        return self._shell.library.at_limit()
 
     def _record_state(self) -> str:
         return self._shell.record_state
@@ -360,6 +376,8 @@ class Bridge(QObject):
         return self._shell.record_warning
 
     customSigns = Property(list, _custom_signs, notify=signsChanged)
+    # A new sign would be saved locked (switched off by the limit).
+    atSignLimit = Property(bool, _at_sign_limit, notify=signsChanged)
     # idle -> capturing -> review (or failed); see Shell.capture_sign.
     recordState = Property(str, _record_state, notify=recordChanged)
     recordProgress = Property(float, _record_progress, notify=recordChanged)
@@ -404,6 +422,58 @@ class Bridge(QObject):
         self._shell.save_signs()
         self._shell.save_actions()
         self.signsChanged.emit()
+
+    @Slot(str)
+    def useSignInstead(self, sign_id: str) -> None:
+        """Make a locked sign the active one; the one it replaces is locked."""
+        self._shell.library.move_to_front(sign_id)
+        self._shell.save_signs()
+        self.signsChanged.emit()
+
+    # -- Premium -----------------------------------------------------------------
+
+    def _premium_plan(self) -> str:
+        return self._shell.premium.plan
+
+    def _trial_days_left(self) -> int:
+        return self._shell.premium.days_left
+
+    def _licensed_to(self) -> str:
+        return self._shell.premium.email
+
+    def _sign_limit(self) -> int:
+        return self._shell.premium.sign_limit
+
+    def _free_sign_limit(self) -> int:
+        return config.FREE_CUSTOM_SIGNS
+
+    def _premium_sign_limit(self) -> int:
+        return config.PREMIUM_CUSTOM_SIGNS
+
+    def _addon_note(self) -> str:
+        return self._shell.addon.note
+
+    premiumPlan = Property(str, _premium_plan, notify=premiumChanged)  # premium/trial/free
+    trialDaysLeft = Property(int, _trial_days_left, notify=premiumChanged)
+    licensedTo = Property(str, _licensed_to, notify=premiumChanged)
+    signLimit = Property(int, _sign_limit, notify=premiumChanged)
+    freeSignLimit = Property(int, _free_sign_limit, constant=True)
+    premiumSignLimit = Property(int, _premium_sign_limit, constant=True)
+    addonNote = Property(str, _addon_note, constant=True)
+
+    @Slot(str, result=str)
+    def enterLicence(self, text: str) -> str:
+        """Check and keep a pasted licence key: "" or why it can't be used."""
+        return self._shell.enter_licence(text)
+
+    @Slot()
+    def removeLicence(self) -> None:
+        self._shell.remove_licence()
+
+    @Slot()
+    def openPremium(self) -> None:
+        # The browser opens the page; Fingerino itself requests nothing.
+        QDesktopServices.openUrl(QUrl(config.PREMIUM_URL))
 
     # -- what signs do -----------------------------------------------------------
 
@@ -545,6 +615,12 @@ class Shell:
         self.data_dir = data_dir
         self.registry = actions.load(data_dir)
         self.library = signs.load(data_dir)
+        # Premium: a licence key, or the trial, lifts the sign limit and
+        # unlocks the add-on's features (licence.py, addons.py).
+        self.licence = licence.load(data_dir)
+        self.premium = licence.status(self.licence, prefs.trial_started, date.today())
+        self.library.set_limit(self.premium.sign_limit)
+        self.addon = addons.load(addons.Host(__version__, self.entitled))
         # Recording a new sign: see capture_sign().
         self.record_state = "idle"
         self.record_progress = 0.0
@@ -603,6 +679,12 @@ class Shell:
         self._topmost.setInterval(int(config.TOPMOST_REASSERT_S * 1000))
         self._topmost.timeout.connect(self._keep_hud_on_top)
         self._topmost.start()
+
+        # Fingerino can run in the tray for days; the trial ends on time.
+        self._premium_timer = QTimer()
+        self._premium_timer.setInterval(int(config.PREMIUM_RECHECK_S * 1000))
+        self._premium_timer.timeout.connect(self.refresh_premium)
+        self._premium_timer.start()
 
         self.tray: QSystemTrayIcon | None = None
         if tray and QSystemTrayIcon.isSystemTrayAvailable():
@@ -900,6 +982,38 @@ class Shell:
             if winui.is_buried(hwnd):
                 winui.raise_above_all(hwnd)
 
+    # -- Premium -------------------------------------------------------------------
+
+    def entitled(self, feature: str) -> bool:
+        """May the add-on offer ``feature``? Yes with a key or in the trial."""
+        return self.premium.premium and feature in self.addon.features
+
+    def refresh_premium(self, today: date | None = None) -> None:
+        """Work out the plan again (a key entered or removed, a day passed)
+        and apply its sign limit. Quiet when nothing changed."""
+        new = licence.status(self.licence, self.prefs.trial_started, today or date.today())
+        if new == self.premium:
+            return
+        self.premium = new
+        self.library.set_limit(new.sign_limit)
+        self.bridge.premiumChanged.emit()
+        self.bridge.signsChanged.emit()
+
+    def enter_licence(self, text: str) -> str:
+        found = licence.parse(text)
+        if isinstance(found, str):
+            return found
+        if not licence.save(self.data_dir, text):
+            return "Fingerino couldn't save the key in its folder. Check the disk isn't full."
+        self.licence = found
+        self.refresh_premium()
+        return ""
+
+    def remove_licence(self) -> None:
+        licence.remove(self.data_dir)
+        self.licence = None
+        self.refresh_premium()
+
     # -- windows and lifetime -----------------------------------------------------
 
     def show_home(self) -> None:
@@ -957,6 +1071,7 @@ class Shell:
         if self._hotkey is not None:
             self._hotkey.stop()
         self._topmost.stop()
+        self._premium_timer.stop()
         self._server.close()
         if self.tray is not None:
             self.tray.hide()

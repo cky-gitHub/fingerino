@@ -30,6 +30,18 @@ ApplicationWindow {
     // Windows' Accessibility > Text size, which Qt doesn't apply by itself.
     readonly property real textScale: bridge ? bridge.textScale : 1.0
     function fs(px) { return Math.round(px * textScale) }
+    // Premium (fingerino/licence.py). One wording for every place the limit
+    // shows, so it reads the same wherever someone meets it.
+    readonly property bool freeVersion: bridge ? bridge.premiumPlan === "free" : true
+    function signsWord(n) { return n === 1 ? "1 of your own signs" : n + " of your own signs" }
+    function limitNote() {
+        return win.freeVersion
+            ? "The free version keeps " + win.signsWord(win.bridge.freeSignLimit)
+              + " switched on. You can still record this one: it's kept, switched off, "
+              + "until you swap it in or unlock Premium."
+            : "Up to " + win.bridge.premiumSignLimit + " of your own signs can be on at "
+              + "once. This one is kept, switched off, until you swap it in."
+    }
     font.pixelSize: fs(14)
 
     width: 980
@@ -508,6 +520,15 @@ ApplicationWindow {
                     + "Only the positions of your finger joints are kept, never a picture."
             }
             Label {
+                objectName: "recordLimitNote"
+                visible: recordDialog.phase === "intro" && win.bridge.atSignLimit
+                Layout.fillWidth: true
+                wrapMode: Text.WordWrap
+                font.pixelSize: win.fs(12)
+                color: win.warnColor
+                text: win.limitNote()
+            }
+            Label {
                 visible: recordDialog.phase === "countdown"
                 Layout.fillWidth: true
                 horizontalAlignment: Text.AlignHCenter
@@ -650,6 +671,136 @@ ApplicationWindow {
             width: parent.width
             wrapMode: Text.WordWrap
             text: "The sign and what it does are removed. This can't be undone."
+        }
+    }
+
+    // "Unlock with Premium" everywhere leads here.
+    Dialog {
+        id: premiumDialog
+        objectName: "premiumDialog"
+        anchors.centerIn: parent
+        width: Math.min(win.width - 64, 460)
+        modal: true
+        title: "Fingerino Premium"
+        padding: 20
+        ColumnLayout {
+            width: premiumDialog.availableWidth
+            spacing: 10
+            Label {
+                Layout.fillWidth: true
+                wrapMode: Text.WordWrap
+                text: "Up to " + win.bridge.premiumSignLimit + " of your own signs switched "
+                    + "on at once, and holding Wispr Flow's dictation key with a sign. "
+                    + "A one-time purchase."
+            }
+            Label {
+                Layout.fillWidth: true
+                wrapMode: Text.WordWrap
+                opacity: 0.7
+                font.pixelSize: win.fs(12)
+                text: "Your key is checked on this computer. Fingerino doesn't go online "
+                    + "for it, or for anything else."
+            }
+            RowLayout {
+                Layout.fillWidth: true
+                Layout.topMargin: 8
+                Item { Layout.fillWidth: true }
+                Button {
+                    text: "Not now"
+                    onClicked: premiumDialog.close()
+                }
+                Button {
+                    text: "Enter licence key…"
+                    onClicked: { premiumDialog.close(); licenceDialog.ask() }
+                }
+                Button {
+                    text: "Get Premium"
+                    highlighted: true
+                    onClicked: win.bridge.openPremium()
+                }
+            }
+        }
+    }
+
+    Dialog {
+        id: licenceDialog
+        objectName: "licenceDialog"
+        anchors.centerIn: parent
+        width: Math.min(win.width - 64, 460)
+        modal: true
+        title: "Enter licence key"
+        padding: 20
+        function ask() {
+            licenceField.text = ""
+            licenceError.text = ""
+            open()
+            licenceField.forceActiveFocus()
+        }
+        ColumnLayout {
+            width: licenceDialog.availableWidth
+            spacing: 10
+            Label {
+                Layout.fillWidth: true
+                wrapMode: Text.WordWrap
+                opacity: 0.7
+                text: "Paste the key from your purchase email. It starts with "
+                    + "“fingerino1.”"
+            }
+            TextArea {
+                id: licenceField
+                Layout.fillWidth: true
+                Layout.preferredHeight: 96
+                wrapMode: TextEdit.WrapAnywhere
+                placeholderText: "fingerino1.…"
+                Accessible.name: "Licence key"
+                onTextChanged: licenceError.text = ""
+            }
+            Label {
+                id: licenceError
+                visible: text !== ""
+                Layout.fillWidth: true
+                wrapMode: Text.WordWrap
+                font.pixelSize: win.fs(12)
+                color: win.errorColor
+            }
+            RowLayout {
+                Layout.fillWidth: true
+                Layout.topMargin: 8
+                Item { Layout.fillWidth: true }
+                Button {
+                    text: "Cancel"
+                    onClicked: licenceDialog.close()
+                }
+                Button {
+                    text: "Unlock"
+                    highlighted: true
+                    enabled: licenceField.text.trim() !== ""
+                    onClicked: {
+                        var err = win.bridge.enterLicence(licenceField.text)
+                        if (err === "")
+                            licenceDialog.close()
+                        else
+                            licenceError.text = err
+                    }
+                }
+            }
+        }
+    }
+
+    Dialog {
+        id: removeLicenceDialog
+        objectName: "removeLicenceDialog"
+        anchors.centerIn: parent
+        width: Math.min(win.width - 64, 420)
+        modal: true
+        title: "Remove the licence key?"
+        standardButtons: Dialog.Ok | Dialog.Cancel
+        onAccepted: win.bridge.removeLicence()
+        Label {
+            width: parent.width
+            wrapMode: Text.WordWrap
+            text: "Fingerino goes back to the free version on this computer. Your signs "
+                + "are kept. You can enter the key again at any time."
         }
     }
 
@@ -916,6 +1067,17 @@ ApplicationWindow {
                                       + " of your own. Add another, or change them on the "
                                       + "Gestures page."
                             }
+                            Label {
+                                objectName: "trialLine"
+                                visible: win.bridge.premiumPlan === "trial"
+                                Layout.fillWidth: true
+                                wrapMode: Text.WordWrap
+                                opacity: 0.7
+                                font.pixelSize: win.fs(12)
+                                text: "Premium trial: " + win.bridge.trialDaysLeft
+                                    + (win.bridge.trialDaysLeft === 1 ? " day" : " days")
+                                    + " left."
+                            }
                         }
                         Button {
                             text: "Record a sign…"
@@ -963,8 +1125,13 @@ ApplicationWindow {
                             required property var modelData
                             property bool recognised: false
                             title: modelData.name
-                            description: (recognised ? "✓ Recognised just now · " : "")
-                                + modelData.action
+                            description: !modelData.locked
+                                ? (recognised ? "✓ Recognised just now · " : "") + modelData.action
+                                : win.freeVersion
+                                    ? "Switched off: the free version keeps "
+                                      + win.signsWord(win.bridge.freeSignLimit) + " on."
+                                    : "Switched off: up to " + win.bridge.premiumSignLimit
+                                      + " can be on at once."
                             Connections {
                                 target: win.bridge
                                 function onSignFired(id) {
@@ -1013,7 +1180,21 @@ ApplicationWindow {
                                         }
                                     }
                                 }
+                                // Past the limit: kept, but swapped in or unlocked
+                                // instead of switched.
                                 Button {
+                                    visible: mine.modelData.locked
+                                    text: "Use this one instead"
+                                    Accessible.name: "Use " + mine.modelData.name + " instead"
+                                    onClicked: win.bridge.useSignInstead(mine.modelData.id)
+                                }
+                                Button {
+                                    visible: mine.modelData.locked && win.freeVersion
+                                    text: "Unlock with Premium"
+                                    onClicked: premiumDialog.open()
+                                }
+                                Button {
+                                    visible: !mine.modelData.locked
                                     text: "Change…"
                                     Accessible.name: "Change what " + mine.modelData.name + " does"
                                     onClicked: actionEditor.edit(mine.modelData.id,
@@ -1046,6 +1227,7 @@ ApplicationWindow {
                                     }
                                 }
                                 Switch {
+                                    visible: !mine.modelData.locked
                                     checked: mine.modelData.enabled
                                     onToggled: win.bridge.setSignEnabled(mine.modelData.id, checked)
                                     Accessible.name: mine.modelData.name
@@ -1056,12 +1238,21 @@ ApplicationWindow {
                     Card {
                         title: win.bridge.customSigns.length === 0
                             ? "Record your first sign" : "Record another sign"
-                        description: "Hold any hand shape in front of the camera for a few "
-                            + "seconds, name it, and choose what it does."
-                        Button {
-                            text: "Record a sign…"
-                            highlighted: true
-                            onClicked: recordDialog.begin()
+                        description: win.bridge.atSignLimit ? win.limitNote()
+                            : "Hold any hand shape in front of the camera for a few "
+                              + "seconds, name it, and choose what it does."
+                        RowLayout {
+                            spacing: 8
+                            Button {
+                                visible: win.bridge.atSignLimit && win.freeVersion
+                                text: "Unlock with Premium"
+                                onClicked: premiumDialog.open()
+                            }
+                            Button {
+                                text: "Record a sign…"
+                                highlighted: true
+                                onClicked: recordDialog.begin()
+                            }
                         }
                     }
                 }
@@ -1178,6 +1369,51 @@ ApplicationWindow {
                             Accessible.name: "Change the pause shortcut"
                             onClicked: hotkeyDialog.ask()
                         }
+                    }
+                }
+
+                SectionHeader { text: "Premium" }
+                Group {
+                    Card {
+                        objectName: "premiumCard"
+                        title: win.bridge.premiumPlan === "premium" ? "Fingerino Premium"
+                            : win.bridge.premiumPlan === "trial"
+                                ? "Premium trial: " + win.bridge.trialDaysLeft
+                                  + (win.bridge.trialDaysLeft === 1 ? " day" : " days") + " left"
+                                : "Free version"
+                        description: win.bridge.premiumPlan === "premium"
+                            ? "Licensed to " + win.bridge.licensedTo + ". Thank you!"
+                            : win.bridge.premiumPlan === "trial"
+                                ? "Everything in Premium, for now. Afterwards Fingerino keeps "
+                                  + win.signsWord(win.bridge.freeSignLimit) + " switched on; "
+                                  + "the rest stay saved."
+                                : win.signsWord(win.bridge.freeSignLimit) + " switched on at "
+                                  + "a time. Premium: up to " + win.bridge.premiumSignLimit
+                                  + ", and the Wispr Flow hold."
+                        RowLayout {
+                            spacing: 8
+                            Button {
+                                visible: win.bridge.premiumPlan === "premium"
+                                text: "Remove key…"
+                                onClicked: removeLicenceDialog.open()
+                            }
+                            Button {
+                                visible: win.bridge.premiumPlan !== "premium"
+                                text: "Enter licence key…"
+                                onClicked: licenceDialog.ask()
+                            }
+                            Button {
+                                visible: win.bridge.premiumPlan !== "premium"
+                                text: "Get Premium"
+                                highlighted: win.freeVersion
+                                onClicked: win.bridge.openPremium()
+                            }
+                        }
+                    }
+                    Card {
+                        visible: win.bridge.addonNote !== ""
+                        title: "Premium add-on"
+                        description: win.bridge.addonNote
                     }
                 }
 

@@ -14,7 +14,7 @@
 # affect how the bundle is assembled rather than how the app behaves.
 #
 # To upgrade, in a clean venv:
-#     pip install -U mediapipe opencv-python pynput numpy pillow PySide6-Essentials pyinstaller
+#     pip install -U mediapipe opencv-python pynput numpy pillow PySide6-Essentials cryptography pyinstaller
 #     python packaging/build.py            # confirm the bundle still works
 # then regenerate this file and commit it with the version bumps visible in
 # the diff. Upgrading is a normal, reviewable change; drifting is not.
@@ -25,6 +25,7 @@ absl-py==2.5.0
 altgraph==0.17.5
 certifi==2026.5.20
 cffi==2.0.0
+cryptography==48.0.0
 contourpy==1.3.3
 cycler==0.12.1
 flatbuffers==25.12.19

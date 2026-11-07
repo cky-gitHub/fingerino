@@ -8,7 +8,10 @@ Fingerino is a **hand-sign shortcut tool**: signs like the shaka trigger
 actions, anyone can record a new sign without code, and the cursor is an
 optional module that is off by default.
 
-- **`main`** has everything below; there are no open feature branches.
+- **`main`** has everything below except the premium foundation, which is on
+  `feat/premium-foundation` (public) and `feat/licence-issuer` (private),
+  each waiting for its PR to be merged; merge the public one first, since
+  the private repo's CI installs the public `main`.
   (`ccr-2c0750c7-uhrknd` and `claude/apollo-rocket-controls-igrhf0` on the
   remote were not made in this work; leave them alone unless the owner says.)
 - **Released:** v0.2.1 (2026-11-07) is the latest release: v0.2.0 plus the
@@ -41,7 +44,13 @@ optional module that is off by default.
   - MediaPipe pinned to <= 0.10.33 in `pyproject.toml` and
     `requirements-build.txt`, guarded by `tests/test_no_telemetry.py` (see
     Decisions).
-- **Tests:** 313 collected; all pass with every dependency installed
+- **Premium foundation (step 2, on its branches):** `fingerino/licence.py`
+  (offline Ed25519 key check, trial, plan), `fingerino/addons.py` (the
+  add-on hook), the sign limit in `signs.Library`, Home's locked sign rows,
+  the note at the limit, Settings › Premium, `licence.key` and the trial
+  start in the README; the key issuer `python -m fingerino_premium.issue`
+  in the private repo. `--selftest` checks the licence library loads.
+- **Tests:** 374 collected; all pass with every dependency installed
   (1 skipped). CI: Linux lint/types/pure tests, Windows full suite and
   `--selftest`.
 - **Camera-checked on Windows (2026-11-05/07):** cursor off by default, shaka
@@ -57,27 +66,23 @@ optional module that is off by default.
 
 ## What needs doing next
 
-1. **Finish the security follow-ups.** Branch `ci/pin-actions`: GitHub
-   Actions pinned to commit SHAs in both repos, and `.github/dependabot.yml`
-   (actions weekly, pip weekly with MediaPipe ignored on purpose). The owner
-   switches on, in Settings → Code security: Dependabot alerts and security
-   updates, secret scanning with push protection, CodeQL "Default" setup
-   (Python and Actions), private vulnerability reporting; and in Settings →
-   Branches a rule for `main` (require a PR and passing CI). On the private
-   repo only Dependabot alerts are free; use Semgrep and Gitleaks locally.
-2. **Premium foundation, in this public repo.**
-   - An add-on hook: at start-up Fingerino looks for an installed
-     `fingerino_premium` package and asks which features it provides. The
-     free app must work fully without it.
-   - An offline licence check: a signed key file verified locally (no network
-     request; the README's privacy promise stands). Pick the signature scheme
-     and the payment provider (Lemon Squeezy, Paddle or Gumroad; compare them
-     first and let the owner choose).
-   - The free tier as decided (see Decisions): 1 custom sign, a 14-day
-     Premium trial for new installs, extra signs kept but switched off
-     afterwards with "Unlock with Premium", a short note at the limit. The
-     limit is licence-key functionality in the public code.
-   - Tests for all of it, camera-free.
+1. **Security follow-ups: done.** `ci/pin-actions` is merged (PR #11); the
+   owner switches on the GitHub settings (Dependabot alerts and security
+   updates, secret scanning with push protection, CodeQL default setup,
+   private vulnerability reporting, a PR-and-CI rule for `main`). On the
+   private repo only Dependabot alerts are free; use Semgrep and Gitleaks
+   locally.
+2. **Premium foundation: built, waiting for merge** (see Where things
+   stand). Left over, before the first sale:
+   - The owner picks the shop (Paddle recommended, Lemon Squeezy as the
+     fallback, Gumroad the simplest but dearest; compared 2026-11-07). Then
+     point `config.PREMIUM_URL` at its checkout (now the README's Premium
+     section, which says it isn't on sale yet).
+   - The automatic issuer: the shop's sale webhook → a small function that
+     holds the signing key → emails the key. Same `licence.make_key` as the
+     manual command. Needs its own security care (it holds the key).
+   - Camera check: record past the limit on a free install, "Use this one
+     instead", enter a key, remove it.
 3. **Premium features, in `fingerino_premium`.** Wispr Flow first: a new
    action kind "hold a key while the sign is held" (press when the sign
    starts, release when it ends) so a shaka holds Wispr's push-to-talk key.
@@ -104,7 +109,7 @@ optional module that is off by default.
 Waiting on the owner: pictures for Exit (crossed fingers) and Swipe right,
 ideally every gesture picture as SVG in a dark (#6c9cbd) and light (#2f5f80)
 stroke, since the PNGs are 2.85:1 on light cards; a Mac for the macOS check;
-the payment provider.
+the payment provider; a backup of the licence signing key (below).
 
 ## Decisions already made
 
@@ -141,13 +146,37 @@ the payment provider.
   removed it and says so in its release notes and the README. Stay on
   0.10.33 until Google offers a way to turn it off; Dependabot ignores
   MediaPipe for this reason.
+- Premium mechanics (2026-11-07):
+  - One-time purchase; keys never expire.
+  - Key: `fingerino1.<base64url JSON>.<base64url Ed25519 signature>`, JSON
+    `{v, id, email, plan, issued}`, pasted into Settings › Premium and kept
+    as `licence.key`. Checked offline with `cryptography` (a dependency
+    since this step); keys can't be revoked, the email deters sharing.
+  - The signing key is `~/.fingerino-premium/signing-key.txt` on the
+    owner's PC (created 2026-11-07), never in a repo; its public half is
+    `licence.PUBLIC_KEY`. Losing it means no new keys until a release ships
+    a new public key. Back it up in a password manager.
+  - The trial starts on the first launch of a version that has it,
+    upgraders included (they have no custom signs: recording was never
+    released). Stored as `trial_started` in settings.json.
+  - The limit counts switched-on signs in list order; the rest are
+    "locked": still on in signs.json, left out of the matcher. "Use this
+    one instead" moves a sign to the top. Switching a sign on at the limit
+    does the same. Unlocking changes nothing on disk.
+  - The sign limit depends only on the licence (a source build with a key
+    gets 20 too); the add-on only adds features (`wispr_hold`,
+    `mcp_server`), each allowed through `host.entitled()`.
+  - Add-on hook: a plain `import fingerino_premium` (PyInstaller builds
+    carry no entry-point metadata), contract `ADDON_API = 1`; any failure
+    leaves the free app with a note in Settings.
 - Commits use the owner's GitHub no-reply address (set per repo).
 - Still open: Exit doesn't work while paused (unchanged from v0.2.0).
 
 ## Keep intact
 
 README privacy promises (video stays in memory, nothing recorded or
-uploaded, no telemetry, the model download is the only network request);
+uploaded, no telemetry, the model download is the only network request,
+licence keys checked offline);
 every file Fingerino writes listed in the README; the single button-release
 path, `DRAG_MAX_S`, held confirmation, Hold and Exit; the
 `mediapipe<=0.10.33` pin and `tests/test_no_telemetry.py`; thresholds in
