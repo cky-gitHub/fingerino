@@ -49,6 +49,8 @@ dependencies = [
     "pillow>=10.0",
     # Home window, HUD, tray icon (Qt).
     "PySide6-Essentials>=6.8",
+    # Checks the signature on a Premium licence key, offline (licence.py).
+    "cryptography>=42",
 ]
 
 # Everything packaging/build.py needs on top of the runtime deps.

@@ -34,7 +34,8 @@ jobs:
           python-version: "3.12"
 
       - run: python -m pip install --upgrade pip
-      - run: python -m pip install ruff mypy pytest
+      # cryptography too: licence.py and its tests are pure Python around it.
+      - run: python -m pip install ruff mypy pytest cryptography
 
       - name: Ruff
         run: ruff check fingerino packaging tests

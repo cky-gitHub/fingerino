@@ -29,6 +29,7 @@ shell.py and the tracking loop in engine.py.
 from __future__ import annotations
 
 import argparse
+import datetime as dt
 import os
 import platform
 import sys
@@ -38,7 +39,7 @@ import traceback
 import cv2
 import numpy as np
 
-from . import __version__, branding, config, macui, settings, winui
+from . import __version__, addons, branding, config, licence, macui, settings, winui
 from . import shell as _shell
 from .cursor_controller import CursorController
 from .engine import Options
@@ -84,6 +85,26 @@ def _selftest() -> int:
     except Exception as exc:
         ok = False
         lines.append(f"cursor control: FAILED {exc!r}")
+
+    # The licence check loads a native library (cryptography's) that a
+    # packaged build can leave out; then every key would be refused.
+    try:
+        from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+
+        seed = Ed25519PrivateKey.generate().private_bytes_raw()
+        key = licence.make_key(seed, "selftest", "selftest@example.invalid")
+        checked = licence.parse(key, licence.public_key_for(seed))
+        if not isinstance(checked, licence.Licence):
+            raise RuntimeError(checked)
+        lines.append("licence check: ok")
+    except Exception as exc:
+        ok = False
+        lines.append(f"licence check: FAILED {exc!r}")
+
+    found = addons.load(addons.Host(__version__, lambda _feature: False))
+    lines.append(f"premium add-on: {found.version or 'installed'}"
+                 f"{' (' + found.note + ')' if found.note else ''}"
+                 if found.installed else "premium add-on: not installed")
 
     if sys.platform == "darwin":
         trusted = macui.accessibility_trusted()
@@ -148,8 +169,14 @@ def _run() -> int:
     winui.set_app_id(_APP_ID)
 
     data_dir = cache_dir()
+    prefs = settings.load(data_dir)
+    # The Premium trial starts on the first launch of a version that has one.
+    started = licence.trial_start(prefs.trial_started, dt.date.today())
+    if started != prefs.trial_started:
+        prefs.trial_started = started
+        settings.save(data_dir, prefs)
     app = _shell.Shell(
-        settings.load(data_dir), data_dir, branding.icon_path(data_dir),
+        prefs, data_dir, branding.icon_path(data_dir),
         Options(camera=args.camera, drive=not args.no_move, debug=args.debug),
         on_crash=_write_crash)
     print(f"[fingerino] ready — {'controlling the OS' if not args.no_move else 'HUD only'}"

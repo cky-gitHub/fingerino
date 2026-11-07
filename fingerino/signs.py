@@ -93,15 +93,54 @@ def from_json(data: object) -> list[Sign]:
 
 class Library:
     """The user's signs, shared by Home (which edits) and the session (which
-    matches). Edits rebuild the matcher and swap it in whole."""
+    matches). Edits rebuild the matcher and swap it in whole.
 
-    def __init__(self, signs: list[Sign] | None = None) -> None:
+    ``limit`` is how many switched-on signs may be active at once (the free
+    version's limit, see licence.py); None means no limit. The first
+    ``limit`` switched-on signs in list order are active and the rest are
+    *locked*: still switched on in signs.json, so nothing changes in the file
+    and unlocking Premium brings them straight back, but left out of the
+    matcher, so editing the file by hand doesn't get round the limit.
+    """
+
+    def __init__(self, signs: list[Sign] | None = None, limit: int | None = None) -> None:
         self._lock = threading.Lock()
         self.signs: list[Sign] = list(signs or [])
-        self.matcher = Matcher(self.signs)
+        self.limit = limit
+        self.matcher = Matcher(self.active())
 
     def _changed(self) -> None:
-        self.matcher = Matcher(self.signs)
+        self.matcher = Matcher(self.active())
+
+    def active(self) -> list[Sign]:
+        """The signs the matcher uses: switched on and within the limit."""
+        on = [s for s in self.signs if s.enabled]
+        return on if self.limit is None else on[:max(self.limit, 0)]
+
+    def locked(self, sign_id: str) -> bool:
+        """Switched on, but past the limit."""
+        sign = self.get(sign_id)
+        return (sign is not None and sign.enabled
+                and all(s.id != sign_id for s in self.active()))
+
+    def at_limit(self) -> bool:
+        """A new sign would be locked."""
+        return self.limit is not None and len(self.active()) >= self.limit
+
+    def set_limit(self, limit: int | None) -> None:
+        with self._lock:
+            self.limit = limit
+            self._changed()
+
+    def move_to_front(self, sign_id: str) -> None:
+        """Put a sign first, switched on, so it is active whatever the limit
+        ("Use this one instead"). The sign it displaces is kept, locked."""
+        sign = self.get(sign_id)
+        if sign is not None:
+            with self._lock:
+                sign.enabled = True
+                self.signs = [sign, *(s for s in self.signs if s.id != sign_id)]
+                self._changed()
 
     def get(self, sign_id: str) -> Sign | None:
         return next((s for s in self.signs if s.id == sign_id), None)
@@ -131,7 +170,7 @@ class Library:
         that are switched off cannot clash, so they carry no note.
         """
         sign = self.get(sign_id)
-        if sign is None or not sign.enabled:
+        if sign is None or not sign.enabled or self.locked(sign_id):
             return ""
         if sign.builtin and (cursor or CURSOR_NOTE not in sign.builtin):
             return (f"Looks like {sign.builtin}. Fingerino checks that first, "
@@ -151,11 +190,17 @@ class Library:
                 self._changed()          # the session re-reads names on a swap
 
     def set_enabled(self, sign_id: str, on: bool) -> None:
+        """Switching a sign on at the limit makes it the active one, the
+        way the user meant it, and locks the one it displaces."""
         sign = self.get(sign_id)
-        if sign is not None:
-            with self._lock:
-                sign.enabled = on
-                self._changed()
+        if sign is None:
+            return
+        if on and not sign.enabled and self.at_limit():
+            self.move_to_front(sign_id)
+            return
+        with self._lock:
+            sign.enabled = on
+            self._changed()
 
     def delete(self, sign_id: str) -> None:
         with self._lock:
