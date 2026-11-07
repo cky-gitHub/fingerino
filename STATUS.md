@@ -148,6 +148,12 @@ code, and the cursor is an optional module that is off by default.
   free" decision: free gets a small number of custom signs (1 to 3, to be
   decided), Premium about 20. The limit is licence-key functionality, which
   FCL forbids circumventing.
+- Free tier (decided 2026-11-07): 1 custom sign plus every built-in sign.
+  New installs get a 14-day Premium trial (a "reverse trial"); when it ends,
+  extra signs are kept but switched off with "Unlock with Premium", never
+  deleted. Reaching the limit shows a short note on what Premium adds, not
+  a hard block. The trial start is stored locally and can be reset; that is
+  accepted.
 
 ## Keep intact
 
