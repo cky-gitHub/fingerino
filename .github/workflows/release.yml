@@ -153,6 +153,26 @@ jobs:
       - name: Compose the release notes
         run: |
           cat > notes.md <<'NOTES'
+          ## Fingerino 0.2.1: please update
+
+          Fingerino promises that your video never leaves your computer and
+          that the app makes no network request apart from the one-time model
+          download. **Versions 0.1.0 and 0.2.0 broke the second promise.** They
+          bundled MediaPipe 0.10.35, Google's hand-tracking library, and Google's
+          builds of it since April 2026 contain a usage-data uploader
+          ("Clearcut") that contacts `play.googleapis.com` and cannot be turned
+          off ([google-ai-edge/mediapipe#6291](https://github.com/google-ai-edge/mediapipe/issues/6291)).
+          This wasn't documented anywhere, and it was found in a security review
+          of Fingerino on 7 November 2026.
+
+          Google says the uploader never sends input data, so no camera
+          images and no hand positions. It doesn't say what it does send.
+
+          **What 0.2.1 changes:** it bundles MediaPipe 0.10.33, which contains no
+          uploader (checked in the library files for Windows and macOS), and an
+          automated test now stops any future build from including one. Nothing
+          else changes. If you have 0.1.0 or 0.2.0, install 0.2.1 over it.
+
           ## Download
 
           | Your machine | File | What to do |

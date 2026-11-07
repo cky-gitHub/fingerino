@@ -35,7 +35,14 @@ dependencies = [
     # reputation) on machines that have it enabled. The 0.10.x line loads
     # the same native code the normal way Python imports work, which SAC
     # doesn't intercept.
-    "mediapipe>=0.10.9,<1.0",
+    #
+    # And at most 0.10.33: Google's own PyPI builds from 0.10.35 on (there is
+    # no 0.10.34) contain a telemetry uploader ("Clearcut", to
+    # play.googleapis.com) with no way to switch it off
+    # (google-ai-edge/mediapipe#6291). Fingerino promises no network request
+    # besides the model download; tests/test_no_telemetry.py checks the
+    # installed MediaPipe so a newer one can't slip in unnoticed.
+    "mediapipe>=0.10.9,<=0.10.33",
     "opencv-python>=4.9",
     "pynput>=1.7.6",
     "numpy>=1.26",

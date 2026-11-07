@@ -22,6 +22,10 @@ frame by frame in memory — never recorded, never written to disk, never
 uploaded. There is no telemetry, no analytics, no crash reporting, no account
 and no update check.
 
+> **0.1.0 and 0.2.0 broke this:** they bundled a MediaPipe version that
+> sends usage data to Google. 0.2.1 fixes it; see the
+> [0.2.1 release notes](https://github.com/cky-gitHub/fingerino/releases/tag/v0.2.1).
+
 Fingerino makes **exactly one network request, ever**: the first run downloads
 the 7 MB hand-landmark model from Google's model CDN. The released installers
 already contain it, so **they make no request at all** — this only affects
