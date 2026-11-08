@@ -173,15 +173,22 @@ def test_the_plan():
 
     bought = licence.status(key, over, TODAY)
     assert (bought.plan, bought.email, bought.premium) == ("premium", "a@example.com", True)
-    assert bought.sign_limit == config.PREMIUM_CUSTOM_SIGNS == 20
+    assert bought.sign_limit == config.PREMIUM_CUSTOM_SIGNS == 30
 
     trial = licence.status(None, started, TODAY)
     assert (trial.plan, trial.days_left, trial.premium) == ("trial", 14, True)
-    assert trial.sign_limit == 20
+    assert trial.sign_limit == 30
 
     free = licence.status(None, over, TODAY)
     assert (free.plan, free.premium) == ("free", False)
     assert free.sign_limit == config.FREE_CUSTOM_SIGNS == 1
+
+
+def test_on_sale_once_the_shop_is_set(monkeypatch):
+    monkeypatch.setattr(config, "PREMIUM_URL", "")
+    assert not licence.on_sale()
+    monkeypatch.setattr(config, "PREMIUM_URL", "https://shop.example/checkout")
+    assert licence.on_sale()
 
 
 def test_the_trial_start_is_kept_in_settings():

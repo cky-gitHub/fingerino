@@ -17,7 +17,7 @@ pytest.importorskip("cryptography")
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from landmarks import peace, recording, thumbs_down, thumbs_up
 
-from fingerino import licence, settings, shell
+from fingerino import config, licence, settings, shell
 from fingerino.sign_matcher import canonical
 
 TODAY = dt.date.today()
@@ -57,8 +57,8 @@ def test_a_new_install_is_in_the_trial(tmp_path):
     try:
         assert a.bridge.property("premiumPlan") == "trial"
         assert a.bridge.property("trialDaysLeft") == 14
-        assert a.bridge.property("signLimit") == 20
-        assert a.library.limit == 20
+        assert a.bridge.property("signLimit") == 30
+        assert a.library.limit == 30
     finally:
         a.close()
 
@@ -132,6 +132,24 @@ def test_without_the_addon_nothing_is_entitled(free):
     assert not free.addon.loaded
     assert free.bridge.property("addonNote") == ""
     assert not free.entitled("wispr_hold")
+
+
+def test_before_the_shop_opens_the_limit_already_applies(free, monkeypatch):
+    """Only "Get Premium" waits for the shop; the rest works as it will."""
+    monkeypatch.setattr(config, "PREMIUM_URL", "")
+    assert free.bridge.property("onSale") is False
+    assert _locked(free) == [False, True, True]
+    free.bridge.openPremium()                        # does nothing, opens nothing
+
+
+def test_a_key_works_before_the_shop_opens(free, seed, monkeypatch):
+    """The owner's dry run: a hand-made key shows what a buyer sees."""
+    monkeypatch.setattr(config, "PREMIUM_URL", "")
+    key = licence.make_key(seed, "dry-run", "me@example.com")
+    assert free.bridge.enterLicence(key) == ""
+    assert free.bridge.property("premiumPlan") == "premium"
+    assert free.bridge.property("licensedTo") == "me@example.com"
+    assert _locked(free) == [False, False, False]
 
 
 def test_the_premium_dialogs_load(free):

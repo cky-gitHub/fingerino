@@ -104,22 +104,20 @@ def build_icons() -> None:
 
     os.makedirs(ICONS, exist_ok=True)
 
+    # branding names the .ico by artwork version, so a new logo is never
+    # mistaken for a cached old one; the copy gets the stable name the
+    # installer and the spec use.
     ico = os.path.join(ICONS, "fingerino.ico")
-    if not os.path.exists(ico):
-        # branding names the file by artwork version; copy to a stable name.
-        src = branding.icon_path(ICONS)
-        if not src:
-            raise SystemExit("could not render the .ico")
-        shutil.copyfile(src, ico)
+    src = branding.icon_path(ICONS)
+    if not src:
+        raise SystemExit("could not render the .ico")
+    shutil.copyfile(src, ico)
     log(f"icon: {ico}")
 
     if not IS_MAC:
         return
 
     icns = os.path.join(ICONS, "fingerino.icns")
-    if os.path.exists(icns):
-        log(f"icon: {icns}")
-        return
 
     iconset = os.path.join(ICONS, "Fingerino.iconset")
     shutil.rmtree(iconset, ignore_errors=True)

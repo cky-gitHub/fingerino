@@ -8,10 +8,11 @@ Fingerino is a **hand-sign shortcut tool**: signs like the shaka trigger
 actions, anyone can record a new sign without code, and the cursor is an
 optional module that is off by default.
 
-- **`main`** has everything below except the premium foundation, which is on
-  `feat/premium-foundation` (public) and `feat/licence-issuer` (private),
-  each waiting for its PR to be merged; merge the public one first, since
-  the private repo's CI installs the public `main`.
+- **`main`** has everything below, including the premium foundation (PR
+  #19). Branch `release/v0.3.0` prepares the release (version 0.3.0,
+  the limit and trial live, "Get Premium" reads "Coming soon", What's new
+  in `docs/release-notes/v0.3.0.md`).
+  Private repo: `feat/licence-issuer` (PR #2) waits for merge.
   (`ccr-2c0750c7-uhrknd` and `claude/apollo-rocket-controls-igrhf0` on the
   remote were not made in this work; leave them alone unless the owner says.)
 - **Released:** v0.2.1 (2026-11-07) is the latest release: v0.2.0 plus the
@@ -44,13 +45,13 @@ optional module that is off by default.
   - MediaPipe pinned to <= 0.10.33 in `pyproject.toml` and
     `requirements-build.txt`, guarded by `tests/test_no_telemetry.py` (see
     Decisions).
-- **Premium foundation (step 2, on its branches):** `fingerino/licence.py`
+- **Premium foundation (step 2, merged):** `fingerino/licence.py`
   (offline Ed25519 key check, trial, plan), `fingerino/addons.py` (the
   add-on hook), the sign limit in `signs.Library`, Home's locked sign rows,
   the note at the limit, Settings › Premium, `licence.key` and the trial
   start in the README; the key issuer `python -m fingerino_premium.issue`
   in the private repo. `--selftest` checks the licence library loads.
-- **Tests:** 374 collected; all pass with every dependency installed
+- **Tests:** 377 collected; all pass with every dependency installed
   (1 skipped). CI: Linux lint/types/pure tests, Windows full suite and
   `--selftest`.
 - **Camera-checked on Windows (2026-11-05/07):** cursor off by default, shaka
@@ -72,31 +73,41 @@ optional module that is off by default.
    private vulnerability reporting, a PR-and-CI rule for `main`). On the
    private repo only Dependabot alerts are free; use Semgrep and Gitleaks
    locally.
-2. **Premium foundation: built, waiting for merge** (see Where things
-   stand). Left over, before the first sale:
+2. **Premium foundation: done.** Left over, before the first sale (the
+   owner's business isn't registered yet, so v0.3.0 ships "coming soon"):
    - The owner picks the shop (Paddle recommended, Lemon Squeezy as the
      fallback, Gumroad the simplest but dearest; compared 2026-11-07). Then
-     point `config.PREMIUM_URL` at its checkout (now the README's Premium
-     section, which says it isn't on sale yet).
+     set `config.PREMIUM_URL` to its checkout and release: that alone opens
+     sales ("Coming soon" becomes "Get Premium"). Update the README's
+     Premium section ("goes on sale soon") at the same time.
+   - A blocklist of leaked keys (owner, 2026-11-08): order ids (hashed) in
+     `licence.py`, refused like a bad signature, so a key posted online
+     stops working from the next update; the honest buyer gets a new key.
+     Offline, about 30 lines plus tests. Leaks are otherwise deterred by the
+     buyer's email shown in Settings, and taken down by request.
    - The automatic issuer: the shop's sale webhook → a small function that
      holds the signing key → emails the key. Same `licence.make_key` as the
      manual command. Needs its own security care (it holds the key).
    - Camera check: record past the limit on a free install, "Use this one
      instead", enter a key, remove it.
-3. **Premium features, in `fingerino_premium`.** Wispr Flow first: a new
+3. **Release v0.3.0** (owner's call to release before the Wispr hold):
+   preview the build (Actions › Release › Run workflow on the branch), do
+   the camera checks (Hold on Windows; macOS if a Mac is available), merge,
+   then tag `v0.3.0` with the owner's go-ahead. First FCL release.
+   It ships the new logo (a solid black shaka on cream,
+   `docs/brand/fingerino-logo.svg`) and "Made by CKY" in Settings › About.
+4. **Premium features, in `fingerino_premium`.** Wispr Flow first: a new
    action kind "hold a key while the sign is held" (press when the sign
    starts, release when it ends) so a shaka holds Wispr's push-to-talk key.
    Then the MCP server, which needs its own security design (what it may do,
    confirmation for risky actions, local only) before any code.
-4. **Slice 6, false triggers.** A dry run that logs matches without acting
+5. **Slice 6, false triggers.** A dry run that logs matches without acting
    (build on `engine.Options(drive=False)`), then tune on the owner's camera.
    Includes the swipe report: slow long swipes work, short fast ones don't
    (proposal: `WAVE_MIN_TRAVEL` 0.22 → 0.16, `WAVE_WINDOW_S` 0.5 → 0.35, a
    0.1 s grace for a dropped open-hand frame; measure first). HUD swipe
    arrows are weak. Target: five custom signs cause fewer than one false
    trigger per hour of desk use.
-5. **Release v0.3.0** once 1 and 2 are in and the camera checks above pass
-   (Hold, macOS if a Mac is available). First FCL release.
 6. **Before slice 8 (sign packs) ships:** `open` and `open_app` actions are
    not approval-gated (only `command` is), so imported ones must be gated or
    limited to http/https; run every imported action through `make_action`;
@@ -138,7 +149,7 @@ the payment provider; a backup of the licence signing key (below).
   installs get a 14-day Premium trial; when it ends, extra signs stay but are
   switched off with "Unlock with Premium", never deleted. Reaching the limit
   shows a short note on what Premium adds, not a hard block. The trial start
-  is stored locally and can be reset; that is accepted. Premium: about 20
+  is stored locally and can be reset; that is accepted. Premium: 30
   custom signs, the Wispr Flow hold, the MCP server.
 - MediaPipe telemetry (2026-11-07): Google's PyPI builds from 0.10.35 on
   contain a "Clearcut" uploader to play.googleapis.com with no off switch
@@ -147,6 +158,10 @@ the payment provider; a backup of the licence signing key (below).
   0.10.33 until Google offers a way to turn it off; Dependabot ignores
   MediaPipe for this reason.
 - Premium mechanics (2026-11-07):
+  - Until the shop opens (`config.PREMIUM_URL` empty) only "Get Premium"
+    waits: it reads "Coming soon". The limit and the trial already apply
+    (owner, 2026-11-08, accepting that free users can't buy more signs
+    until the shop opens); keys work, for the owner's dry run.
   - One-time purchase; keys never expire.
   - Key: `fingerino1.<base64url JSON>.<base64url Ed25519 signature>`, JSON
     `{v, id, email, plan, issued}`, pasted into Settings › Premium and kept
@@ -169,6 +184,7 @@ the payment provider; a backup of the licence signing key (below).
   - Add-on hook: a plain `import fingerino_premium` (PyInstaller builds
     carry no entry-point metadata), contract `ADDON_API = 1`; any failure
     leaves the free app with a note in Settings.
+- Premium's limit is 30 signs, not unlimited (owner, 2026-11-08).
 - Commits use the owner's GitHub no-reply address (set per repo).
 - Still open: Exit doesn't work while paused (unchanged from v0.2.0).
 

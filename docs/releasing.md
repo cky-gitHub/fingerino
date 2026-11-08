@@ -8,6 +8,9 @@ routine around it.
 
 1. **Bump the version** in [`fingerino/__init__.py`](../fingerino/__init__.py),
    e.g. `__version__ = "0.1.1"`. It is the only place the version lives.
+   Write what's new in `docs/release-notes/v0.1.1.md` (optional): the
+   workflow puts it at the top of the release notes, above the download
+   table and checksums every release gets.
 2. **Merge that to `main`** through a PR like any other change.
 3. **Tag the merge commit and push the tag:**
 

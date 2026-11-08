@@ -172,17 +172,21 @@ def test_only_built_in_signs_have_a_picture(home):
 
 
 def test_theme_setting(home, tmp_path):
-    from PySide6.QtCore import Qt
+    from PySide6.QtCore import QObject, Qt
 
     from fingerino import settings
+
     a = home
     hints = a.app.styleHints()
     assert a.bridge.property("theme") == "system"
+    box = a.window.findChild(QObject, "themeBox")
+    assert box.property("displayText") == "Use system setting"   # not blank
     a.bridge.setTheme("light")
     assert hints.colorScheme() == Qt.ColorScheme.Light
     assert a.prefs.theme == "light"
     a.bridge.setTheme("dark")
     assert hints.colorScheme() == Qt.ColorScheme.Dark
+    assert box.property("displayText") == "Dark"
     a.bridge.setTheme("purple")                          # ignored
     assert a.prefs.theme == "dark"
     a.bridge.setTheme("system")

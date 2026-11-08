@@ -16,7 +16,9 @@ carries the buyer's email so a shared key can be traced. Keys don't expire:
 Premium is a one-time purchase.
 
 The trial needs no key: a new install gets ``config.TRIAL_DAYS`` of Premium
-from its first launch, remembered in settings.json. Deleting that file starts
+from its first launch, remembered in settings.json. Until the shop opens
+(``config.PREMIUM_URL`` empty) only "Get Premium" changes: it reads "Coming
+soon"; the limit, the trial and keys work as they will once it sells. Deleting that file starts
 a new trial, which was accepted when the free tier was decided.
 
 Under FCL-1.0-MIT this check is licence-key functionality that may not be
@@ -136,6 +138,11 @@ def public_key_for(private_key: bytes) -> bytes:
 # ---------------------------------------------------------------------------
 # What the user has: Premium, the trial, or the free version
 # ---------------------------------------------------------------------------
+def on_sale() -> bool:
+    """Premium can be bought: the shop is open."""
+    return bool(config.PREMIUM_URL)
+
+
 @dataclass(frozen=True)
 class Status:
     plan: str                       # "premium", "trial" or "free"

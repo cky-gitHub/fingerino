@@ -453,6 +453,12 @@ class Bridge(QObject):
     def _addon_note(self) -> str:
         return self._shell.addon.note
 
+    def _on_sale(self) -> bool:
+        return licence.on_sale()
+
+    def _trial_days(self) -> int:
+        return config.TRIAL_DAYS
+
     premiumPlan = Property(str, _premium_plan, notify=premiumChanged)  # premium/trial/free
     trialDaysLeft = Property(int, _trial_days_left, notify=premiumChanged)
     licensedTo = Property(str, _licensed_to, notify=premiumChanged)
@@ -460,6 +466,8 @@ class Bridge(QObject):
     freeSignLimit = Property(int, _free_sign_limit, constant=True)
     premiumSignLimit = Property(int, _premium_sign_limit, constant=True)
     addonNote = Property(str, _addon_note, constant=True)
+    onSale = Property(bool, _on_sale, constant=True)        # else "Coming soon"
+    trialDays = Property(int, _trial_days, constant=True)
 
     @Slot(str, result=str)
     def enterLicence(self, text: str) -> str:
@@ -473,7 +481,8 @@ class Bridge(QObject):
     @Slot()
     def openPremium(self) -> None:
         # The browser opens the page; Fingerino itself requests nothing.
-        QDesktopServices.openUrl(QUrl(config.PREMIUM_URL))
+        if licence.on_sale():
+            QDesktopServices.openUrl(QUrl(config.PREMIUM_URL))
 
     # -- what signs do -----------------------------------------------------------
 

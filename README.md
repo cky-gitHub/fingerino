@@ -54,7 +54,7 @@ page in your browser, like any other link.
 | File | What it is |
 | --- | --- |
 | `hand_landmarker.task` | The downloaded model (absent if your installer bundled it) |
-| `fingerino-v1.ico` | The app icon, drawn on first run |
+| `fingerino-v4.ico` | The app icon, drawn on first run (replaces older ones, `fingerino-v1.ico` to `-v3.ico`) |
 | `settings.json` | Which gestures you switched off, whether the cursor and the hand skeleton are on, your pause shortcut and theme, whether you've seen the welcome, and the day your Premium trial started |
 | `actions.json` | What you changed your signs to do (shortcuts, apps, links, commands) |
 | `signs.json` | Signs you recorded: a name and the positions of 21 hand joints per sample — never an image |
@@ -125,12 +125,11 @@ two-handed wave can't pause you by accident.
 
 ## Premium
 
-Fingerino is free, with every built-in sign and one sign of your own switched
-on at a time. **Premium** adds:
-
-- up to 20 of your own signs switched on at once;
-- holding a key while you hold a sign, so a sign can hold Wispr Flow's
-  dictation key (coming in the next version).
+- **Free:** every built-in sign, and one sign of your own switched on at a
+  time.
+- **Premium:** up to 30 of your own signs switched on at once, and (coming
+  next) holding a key while you hold a sign, so a sign can hold Wispr Flow's
+  dictation key.
 
 A new install gets **14 days of Premium** to try it. When the trial ends,
 nothing is deleted: your extra signs stay, switched off, and you choose which
@@ -138,8 +137,8 @@ one stays on (Gestures › "Use this one instead").
 
 Premium is a one-time purchase, unlocked with a licence key you paste into
 Settings › Premium. The key is checked on your computer; Fingerino never goes
-online for it (see [Privacy](#privacy)). Premium isn't on sale yet; this
-section will say where to buy it when it is.
+online for it (see [Privacy](#privacy)). **Premium goes on sale soon**; until
+then the button in Fingerino says "Coming soon".
 
 ## Download
 

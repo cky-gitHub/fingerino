@@ -714,7 +714,8 @@ ApplicationWindow {
                     onClicked: { premiumDialog.close(); licenceDialog.ask() }
                 }
                 Button {
-                    text: "Get Premium"
+                    text: win.bridge.onSale ? "Get Premium" : "Coming soon"
+                    enabled: win.bridge.onSale
                     highlighted: true
                     onClicked: win.bridge.openPremium()
                 }
@@ -1404,7 +1405,8 @@ ApplicationWindow {
                             }
                             Button {
                                 visible: win.bridge.premiumPlan !== "premium"
-                                text: "Get Premium"
+                                text: win.bridge.onSale ? "Get Premium" : "Coming soon"
+                                enabled: win.bridge.onSale
                                 highlighted: win.freeVersion
                                 onClicked: win.bridge.openPremium()
                             }
@@ -1432,7 +1434,9 @@ ApplicationWindow {
                             textRole: "text"
                             valueRole: "value"
                             implicitWidth: 200
-                            currentIndex: indexOfValue(win.bridge.theme)
+                            // Not indexOfValue(): bound at start it runs before the
+                            // model is filled, leaves the box blank and never re-runs.
+                            currentIndex: ["system", "light", "dark"].indexOf(win.bridge.theme)
                             onActivated: win.bridge.setTheme(currentValue)
                             Accessible.name: "Theme"
                         }
@@ -1456,7 +1460,7 @@ ApplicationWindow {
                 Group {
                     Card {
                         title: "Fingerino " + win.bridge.version
-                        description: "Control your computer with hand signs."
+                        description: "Control your computer with hand signs. Made by CKY."
                         Button {
                             text: "Website"
                             onClicked: win.bridge.openRepo("")
