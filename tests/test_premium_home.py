@@ -24,12 +24,6 @@ TODAY = dt.date.today()
 LONG_AGO = (TODAY - dt.timedelta(days=60)).isoformat()
 
 
-@pytest.fixture(autouse=True)
-def on_sale(monkeypatch):
-    """Most of these are about Premium once it sells; see the "soon" tests."""
-    monkeypatch.setattr(config, "PREMIUM_URL", "https://shop.example/checkout")
-
-
 @pytest.fixture
 def seed(monkeypatch) -> bytes:
     """A throwaway signer standing in for the shop's."""
@@ -63,8 +57,8 @@ def test_a_new_install_is_in_the_trial(tmp_path):
     try:
         assert a.bridge.property("premiumPlan") == "trial"
         assert a.bridge.property("trialDaysLeft") == 14
-        assert a.bridge.property("signLimit") == 20
-        assert a.library.limit == 20
+        assert a.bridge.property("signLimit") == 30
+        assert a.library.limit == 30
     finally:
         a.close()
 
@@ -140,35 +134,22 @@ def test_without_the_addon_nothing_is_entitled(free):
     assert not free.entitled("wispr_hold")
 
 
-def test_until_the_shop_opens_nothing_is_limited(tmp_path, monkeypatch):
+def test_before_the_shop_opens_the_limit_already_applies(free, monkeypatch):
+    """Only "Get Premium" waits for the shop; the rest works as it will."""
     monkeypatch.setattr(config, "PREMIUM_URL", "")
-    a = _shell(tmp_path, LONG_AGO)          # even with a trial long over
-    try:
-        for name, make in (("Up", thumbs_up), ("Down", thumbs_down), ("Peace", peace)):
-            a.library.add(name, [canonical(lms, "Right")
-                                 for lms in recording(make, random.Random(1))])
-        assert a.bridge.property("premiumPlan") == "soon"
-        assert a.bridge.property("onSale") is False
-        assert a.bridge.property("signLimit") == 20
-        assert _locked(a) == [False, False, False]
-        a.bridge.openPremium()                       # does nothing, opens nothing
-    finally:
-        a.close()
+    assert free.bridge.property("onSale") is False
+    assert _locked(free) == [False, True, True]
+    free.bridge.openPremium()                        # does nothing, opens nothing
 
 
-def test_a_key_works_before_the_shop_opens(tmp_path, seed, monkeypatch):
+def test_a_key_works_before_the_shop_opens(free, seed, monkeypatch):
     """The owner's dry run: a hand-made key shows what a buyer sees."""
     monkeypatch.setattr(config, "PREMIUM_URL", "")
-    a = _shell(tmp_path, "")
-    try:
-        key = licence.make_key(seed, "dry-run", "me@example.com")
-        assert a.bridge.enterLicence(key) == ""
-        assert a.bridge.property("premiumPlan") == "premium"
-        assert a.bridge.property("licensedTo") == "me@example.com"
-        a.bridge.removeLicence()
-        assert a.bridge.property("premiumPlan") == "soon"
-    finally:
-        a.close()
+    key = licence.make_key(seed, "dry-run", "me@example.com")
+    assert free.bridge.enterLicence(key) == ""
+    assert free.bridge.property("premiumPlan") == "premium"
+    assert free.bridge.property("licensedTo") == "me@example.com"
+    assert _locked(free) == [False, False, False]
 
 
 def test_the_premium_dialogs_load(free):

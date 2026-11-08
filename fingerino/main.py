@@ -170,10 +170,9 @@ def _run() -> int:
 
     data_dir = cache_dir()
     prefs = settings.load(data_dir)
-    # The Premium trial starts on the first launch of a version that sells
-    # Premium; until then everything is unlocked and no trial is counted.
+    # The Premium trial starts on the first launch of a version that has one.
     started = licence.trial_start(prefs.trial_started, dt.date.today())
-    if licence.on_sale() and started != prefs.trial_started:
+    if started != prefs.trial_started:
         prefs.trial_started = started
         settings.save(data_dir, prefs)
     app = _shell.Shell(

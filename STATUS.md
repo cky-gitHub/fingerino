@@ -10,7 +10,8 @@ optional module that is off by default.
 
 - **`main`** has everything below, including the premium foundation (PR
   #19). Branch `release/v0.3.0` prepares the release (version 0.3.0,
-  Premium "coming soon", What's new in `docs/release-notes/v0.3.0.md`).
+  the limit and trial live, "Get Premium" reads "Coming soon", What's new
+  in `docs/release-notes/v0.3.0.md`).
   Private repo: `feat/licence-issuer` (PR #2) waits for merge.
   (`ccr-2c0750c7-uhrknd` and `claude/apollo-rocket-controls-igrhf0` on the
   remote were not made in this work; leave them alone unless the owner says.)
@@ -77,8 +78,8 @@ optional module that is off by default.
    - The owner picks the shop (Paddle recommended, Lemon Squeezy as the
      fallback, Gumroad the simplest but dearest; compared 2026-11-07). Then
      set `config.PREMIUM_URL` to its checkout and release: that alone opens
-     sales, starts every install's 14-day trial and turns the limit on.
-     Update the README's Premium section ("Coming soon") at the same time.
+     sales ("Coming soon" becomes "Get Premium"). Update the README's
+     Premium section ("goes on sale soon") at the same time.
    - The automatic issuer: the shop's sale webhook → a small function that
      holds the signing key → emails the key. Same `licence.make_key` as the
      manual command. Needs its own security care (it holds the key).
@@ -141,7 +142,7 @@ the payment provider; a backup of the licence signing key (below).
   installs get a 14-day Premium trial; when it ends, extra signs stay but are
   switched off with "Unlock with Premium", never deleted. Reaching the limit
   shows a short note on what Premium adds, not a hard block. The trial start
-  is stored locally and can be reset; that is accepted. Premium: about 20
+  is stored locally and can be reset; that is accepted. Premium: 30
   custom signs, the Wispr Flow hold, the MCP server.
 - MediaPipe telemetry (2026-11-07): Google's PyPI builds from 0.10.35 on
   contain a "Clearcut" uploader to play.googleapis.com with no off switch
@@ -150,10 +151,10 @@ the payment provider; a backup of the licence signing key (below).
   0.10.33 until Google offers a way to turn it off; Dependabot ignores
   MediaPipe for this reason.
 - Premium mechanics (2026-11-07):
-  - Until the shop opens (`config.PREMIUM_URL` empty): plan "soon",
-    everything unlocked for everyone, no trial counted, "Get Premium" reads
-    "Coming soon". Keys still work, for the owner's dry run. Decided so no
-    one loses signs they have no way to buy back.
+  - Until the shop opens (`config.PREMIUM_URL` empty) only "Get Premium"
+    waits: it reads "Coming soon". The limit and the trial already apply
+    (owner, 2026-11-08, accepting that free users can't buy more signs
+    until the shop opens); keys work, for the owner's dry run.
   - One-time purchase; keys never expire.
   - Key: `fingerino1.<base64url JSON>.<base64url Ed25519 signature>`, JSON
     `{v, id, email, plan, issued}`, pasted into Settings › Premium and kept
@@ -163,7 +164,7 @@ the payment provider; a backup of the licence signing key (below).
     owner's PC (created 2026-11-07), never in a repo; its public half is
     `licence.PUBLIC_KEY`. Losing it means no new keys until a release ships
     a new public key. Back it up in a password manager.
-  - The trial starts on the first launch of a version that sells Premium,
+  - The trial starts on the first launch of a version that has it,
     upgraders included (they have no custom signs: recording was never
     released). Stored as `trial_started` in settings.json.
   - The limit counts switched-on signs in list order; the rest are
@@ -176,7 +177,7 @@ the payment provider; a backup of the licence signing key (below).
   - Add-on hook: a plain `import fingerino_premium` (PyInstaller builds
     carry no entry-point metadata), contract `ADDON_API = 1`; any failure
     leaves the free app with a note in Settings.
-- Premium's limit is 20 signs, not unlimited (owner, 2026-11-07).
+- Premium's limit is 30 signs, not unlimited (owner, 2026-11-08).
 - Commits use the owner's GitHub no-reply address (set per repo).
 - Still open: Exit doesn't work while paused (unchanged from v0.2.0).
 

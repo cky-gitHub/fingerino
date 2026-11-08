@@ -180,14 +180,14 @@ SIGN_SIMILAR_SHARE = 0.3
 FREE_CUSTOM_SIGNS = 1
 # Premium's own cap keeps matching quick: every live frame is compared with
 # every sample of every active sign.
-PREMIUM_CUSTOM_SIGNS = 20
+PREMIUM_CUSTOM_SIGNS = 30
 TRIAL_DAYS = 14                     # Premium trial from a new install's first launch
 # How often a running Fingerino checks whether the trial has ended.
 PREMIUM_RECHECK_S = 3600
 # The shop's checkout page, opened in the browser by "Get Premium" (Fingerino
-# itself requests nothing). Empty until the shop opens: then Premium is
-# "Coming soon", every sign is unlocked for everyone and no trial starts.
-# Setting it, in a release, is all it takes to open sales.
+# itself requests nothing). Empty until the shop opens: the button then reads
+# "Coming soon". The limit, the trial and licence keys work either way, so
+# setting this, in a release, is all it takes to open sales.
 PREMIUM_URL = ""
 
 # ---------------------------------------------------------------------------

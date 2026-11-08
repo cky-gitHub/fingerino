@@ -53,7 +53,7 @@ def test_past_the_limit_signs_are_kept_but_never_fire():
 
 def test_unlocking_brings_every_sign_back():
     lib, a, b, c = _library(limit=1)
-    lib.set_limit(20)
+    lib.set_limit(30)
     assert not any(lib.locked(s.id) for s in (a, b, c))
     assert _fires(lib, thumbs_down) == "Down"
     assert not lib.at_limit()

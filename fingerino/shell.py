@@ -627,8 +627,7 @@ class Shell:
         # Premium: a licence key, or the trial, lifts the sign limit and
         # unlocks the add-on's features (licence.py, addons.py).
         self.licence = licence.load(data_dir)
-        self.premium = licence.status(self.licence, prefs.trial_started, date.today(),
-                                      licence.on_sale())
+        self.premium = licence.status(self.licence, prefs.trial_started, date.today())
         self.library.set_limit(self.premium.sign_limit)
         self.addon = addons.load(addons.Host(__version__, self.entitled))
         # Recording a new sign: see capture_sign().
@@ -1001,8 +1000,7 @@ class Shell:
     def refresh_premium(self, today: date | None = None) -> None:
         """Work out the plan again (a key entered or removed, a day passed)
         and apply its sign limit. Quiet when nothing changed."""
-        new = licence.status(self.licence, self.prefs.trial_started, today or date.today(),
-                             licence.on_sale())
+        new = licence.status(self.licence, self.prefs.trial_started, today or date.today())
         if new == self.premium:
             return
         self.premium = new
