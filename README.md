@@ -13,6 +13,10 @@ Built on MediaPipe's `HandLandmarker` (live-stream, two hands), OpenCV for
 capture + a clean HUD, `pynput` for cursor/scroll/keyboard control, and a One
 Euro Filter so the cursor glides instead of shaking.
 
+**Download:** [Windows](https://github.com/cky-gitHub/fingerino/releases/latest/download/Fingerino-windows-x64-Setup.exe) ·
+[Mac (Apple Silicon)](https://github.com/cky-gitHub/fingerino/releases/latest/download/Fingerino-macos-arm64.dmg) — always the newest
+version. More in [Download](#download).
+
 ---
 
 ## Privacy
@@ -142,14 +146,17 @@ then the button in Fingerino says "Coming soon".
 
 ## Download
 
-Grab the installer for your machine from the
-[latest release](https://github.com/cky-gitHub/fingerino/releases/latest) —
-no Python, no terminal, nothing else to install.
+Click your machine to download the newest version — no Python, no terminal,
+nothing else to install.
 
-| Your machine | File | What to do |
+| Your machine | Download | What to do |
 | --- | --- | --- |
-| Windows 10 / 11 | `Fingerino-*-windows-x64-Setup.exe` | Run it. Fingerino lands in your Start menu. |
-| Mac — Apple Silicon | `Fingerino-*-macos-arm64.dmg` | Open it, drag Fingerino to Applications. |
+| Windows 10 / 11 | [**Fingerino for Windows**](https://github.com/cky-gitHub/fingerino/releases/latest/download/Fingerino-windows-x64-Setup.exe) | Run it. Fingerino lands in your Start menu. |
+| Mac — Apple Silicon | [**Fingerino for Mac**](https://github.com/cky-gitHub/fingerino/releases/latest/download/Fingerino-macos-arm64.dmg) | Open it, drag Fingerino to Applications. |
+
+Also there: a [portable Windows zip](https://github.com/cky-gitHub/fingerino/releases/latest/download/Fingerino-windows-x64.zip) that needs
+no install, and every version with its release notes under
+[Releases](https://github.com/cky-gitHub/fingerino/releases).
 
 Which Mac do you have? **Apple menu › About This Mac** — "Apple M-something" is
 Apple Silicon. Intel Macs are not supported: MediaPipe, the hand tracker
