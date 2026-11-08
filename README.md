@@ -54,7 +54,7 @@ page in your browser, like any other link.
 | File | What it is |
 | --- | --- |
 | `hand_landmarker.task` | The downloaded model (absent if your installer bundled it) |
-| `fingerino-v1.ico` | The app icon, drawn on first run |
+| `fingerino-v2.ico` | The app icon, drawn on first run (replaces an older `fingerino-v1.ico`) |
 | `settings.json` | Which gestures you switched off, whether the cursor and the hand skeleton are on, your pause shortcut and theme, whether you've seen the welcome, and the day your Premium trial started |
 | `actions.json` | What you changed your signs to do (shortcuts, apps, links, commands) |
 | `signs.json` | Signs you recorded: a name and the positions of 21 hand joints per sample — never an image |

@@ -1458,7 +1458,7 @@ ApplicationWindow {
                 Group {
                     Card {
                         title: "Fingerino " + win.bridge.version
-                        description: "Control your computer with hand signs."
+                        description: "Control your computer with hand signs. Made by CKY."
                         Button {
                             text: "Website"
                             onClicked: win.bridge.openRepo("")
