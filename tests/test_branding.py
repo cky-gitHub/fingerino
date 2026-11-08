@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+import pytest
+
+pytest.importorskip("PIL")      # not in the dependency-free CI job
+
 from PIL import Image
 
 from fingerino import branding
