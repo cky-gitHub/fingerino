@@ -80,6 +80,11 @@ optional module that is off by default.
      set `config.PREMIUM_URL` to its checkout and release: that alone opens
      sales ("Coming soon" becomes "Get Premium"). Update the README's
      Premium section ("goes on sale soon") at the same time.
+   - A blocklist of leaked keys (owner, 2026-11-08): order ids (hashed) in
+     `licence.py`, refused like a bad signature, so a key posted online
+     stops working from the next update; the honest buyer gets a new key.
+     Offline, about 30 lines plus tests. Leaks are otherwise deterred by the
+     buyer's email shown in Settings, and taken down by request.
    - The automatic issuer: the shop's sale webhook → a small function that
      holds the signing key → emails the key. Same `licence.make_key` as the
      manual command. Needs its own security care (it holds the key).
