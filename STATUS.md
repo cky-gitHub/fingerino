@@ -94,10 +94,8 @@ optional module that is off by default.
    preview the build (Actions › Release › Run workflow on the branch), do
    the camera checks (Hold on Windows; macOS if a Mac is available), merge,
    then tag `v0.3.0` with the owner's go-ahead. First FCL release.
-   The new logo (black shaka on cream, from `docs/brand/fingerino-logo.svg`;
-   "Made by CKY" in Settings › About) is on `feat/new-logo`, branched from
-   the release branch: merge it into `release/v0.3.0` to ship it in v0.3.0,
-   or into main after the release.
+   It ships the new logo (a solid black shaka on cream,
+   `docs/brand/fingerino-logo.svg`) and "Made by CKY" in Settings › About.
 4. **Premium features, in `fingerino_premium`.** Wispr Flow first: a new
    action kind "hold a key while the sign is held" (press when the sign
    starts, release when it ends) so a shaka holds Wispr's push-to-talk key.

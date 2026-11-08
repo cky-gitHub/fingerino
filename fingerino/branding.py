@@ -15,7 +15,7 @@ import os
 from PIL import Image, ImageDraw
 
 # Bumped when the artwork changes so cached icons are regenerated.
-ICON_VERSION = 3
+ICON_VERSION = 4
 ICON_SIZES = (16, 20, 24, 32, 48, 64, 128, 256)
 
 _PLATE = (247, 242, 233)       # #F7F2E9
@@ -24,7 +24,7 @@ _EDGE_SMALL = (150, 141, 127)  # darker, for the 1-2px edge of tiny icons
 _INK = (23, 23, 23)            # #171717
 
 # The hand: thumb, three curled fingers, the little finger with the wrist,
-# and the palm.
+# the palm, and the filling between the fingers.
 _HAND = (
     # thumb
     (201.5, 232.4, 180.0, 238.9, 160.2, 248.7, 145.3, 263.3, 142.0, 276.3,
@@ -64,6 +64,12 @@ _HAND = (
      531.8, 607.9, 510.3, 609.5, 493.8, 604.6, 469.1, 590.0, 459.1, 578.6,
      455.8, 568.9, 414.6, 552.6, 389.8, 551.0, 366.7, 541.3, 346.8, 526.6,
      340.2, 515.3, 340.2, 497.4),
+    # fills the gaps between thumb and fingers, so the hand is one solid
+    # shape; its top edge bridges each gap just under the knuckles, leaving
+    # a small notch between them
+    (374.9, 403.1, 433.0, 369.0, 558.2, 383.6, 573.1, 401.5, 655.7, 450.2,
+     672.2, 456.7, 726.7, 461.6, 739.9, 474.6, 700.0, 600.0, 350.0, 640.0,
+     320.0, 560.0, 325.4, 482.7),
 )
 _HAND_CENTRE = (529.3, 538.9)  # middle of the hand's bounding box
 
