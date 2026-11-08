@@ -1434,7 +1434,9 @@ ApplicationWindow {
                             textRole: "text"
                             valueRole: "value"
                             implicitWidth: 200
-                            currentIndex: indexOfValue(win.bridge.theme)
+                            // Not indexOfValue(): bound at start it runs before the
+                            // model is filled, leaves the box blank and never re-runs.
+                            currentIndex: ["system", "light", "dark"].indexOf(win.bridge.theme)
                             onActivated: win.bridge.setTheme(currentValue)
                             Accessible.name: "Theme"
                         }
