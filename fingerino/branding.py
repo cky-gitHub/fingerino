@@ -15,7 +15,7 @@ import os
 from PIL import Image, ImageDraw
 
 # Bumped when the artwork changes so cached icons are regenerated.
-ICON_VERSION = 2
+ICON_VERSION = 3
 ICON_SIZES = (16, 20, 24, 32, 48, 64, 128, 256)
 
 _PLATE = (247, 242, 233)       # #F7F2E9
@@ -23,7 +23,8 @@ _EDGE = (200, 191, 177)        # #C8BFB1
 _EDGE_SMALL = (150, 141, 127)  # darker, for the 1-2px edge of tiny icons
 _INK = (23, 23, 23)            # #171717
 
-# The hand: thumb, three curled fingers, and the little finger with the palm.
+# The hand: thumb, three curled fingers, the little finger with the wrist,
+# and the palm.
 _HAND = (
     # thumb
     (201.5, 232.4, 180.0, 238.9, 160.2, 248.7, 145.3, 263.3, 142.0, 276.3,
@@ -53,6 +54,16 @@ _HAND = (
      441.0, 819.2, 467.4, 835.5, 497.1, 845.2, 525.2, 846.8, 553.3, 840.3,
      576.4, 829.0, 611.1, 799.7, 678.8, 720.1, 761.4, 612.8, 882.0, 447.0,
      905.1, 411.2, 915.0, 388.5, 916.6, 367.3),
+    # the palm, filling the space under the curled fingers; the gaps between
+    # the fingers stay open above it
+    (325.4, 482.7, 303.9, 529.9, 294.0, 562.4, 287.4, 601.4, 285.7, 653.4,
+     287.4, 659.9, 313.8, 707.0, 356.7, 698.9, 426.1, 690.8, 533.5, 674.5,
+     632.6, 663.2, 677.2, 653.4, 706.9, 643.7, 751.5, 624.2, 749.8, 622.5,
+     746.5, 622.5, 710.2, 635.5, 670.6, 643.7, 644.1, 645.3, 642.5, 646.9,
+     614.4, 646.9, 596.2, 643.7, 573.1, 633.9, 563.2, 624.2, 559.9, 611.1,
+     531.8, 607.9, 510.3, 609.5, 493.8, 604.6, 469.1, 590.0, 459.1, 578.6,
+     455.8, 568.9, 414.6, 552.6, 389.8, 551.0, 366.7, 541.3, 346.8, 526.6,
+     340.2, 515.3, 340.2, 497.4),
 )
 _HAND_CENTRE = (529.3, 538.9)  # middle of the hand's bounding box
 
