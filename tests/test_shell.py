@@ -158,3 +158,17 @@ def test_shortcut_recorder_swaps_cmd_and_ctrl_on_macos(monkeypatch):
     monkeypatch.setattr(shell.sys, "platform", "darwin")
     m = Qt.KeyboardModifier.ControlModifier.value
     assert shell.combo_from_qt(Qt.Key.Key_K.value, m) == "cmd+k"
+
+
+def test_an_oversized_camera_frame_is_shrunk_to_the_working_width():
+    """A camera that ignores the requested size must not make every frame
+    slower to process or the HUD's text tiny."""
+    import numpy as np
+
+    from fingerino import engine
+
+    big = np.zeros((2160, 3840, 3), np.uint8)
+    fitted = engine.fit_frame(big)
+    assert fitted.shape == (config.CAMERA_HEIGHT, config.CAMERA_WIDTH, 3)
+    small = np.zeros((480, 640, 3), np.uint8)
+    assert engine.fit_frame(small) is small

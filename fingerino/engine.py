@@ -43,10 +43,32 @@ def open_camera(index: int) -> cv2.VideoCapture:
     # CAP_DSHOW starts noticeably faster than the default backend on Windows.
     backend = cv2.CAP_DSHOW if sys.platform.startswith("win") else 0
     cap = cv2.VideoCapture(index, backend)
+    # MJPG first: over DirectShow many laptop cameras only reach 30 fps at
+    # 720p in MJPG, and fall back to a few frames a second in raw YUY2. It
+    # has to be set before the size to take effect. Ignored where unsupported.
+    cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter.fourcc(*"MJPG"))
     cap.set(cv2.CAP_PROP_FRAME_WIDTH, config.CAMERA_WIDTH)
     cap.set(cv2.CAP_PROP_FRAME_HEIGHT, config.CAMERA_HEIGHT)
     cap.set(cv2.CAP_PROP_FPS, 30)
+    # Keep at most one frame queued, so a slow frame never leaves the HUD
+    # showing the past.
+    cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
     return cap
+
+
+def fit_frame(frame: np.ndarray) -> np.ndarray:
+    """Shrink a frame wider than config.CAMERA_WIDTH to that width.
+
+    Some cameras ignore the requested size and send 1080p or more. Every
+    step after this (MediaPipe, the overlay, the HUD) then costs several
+    times as much, which shows as lag, and the HUD's text, sized for a
+    CAMERA_WIDTH frame, comes out tiny. Smaller frames are left as they are.
+    """
+    w = frame.shape[1]
+    if w <= config.CAMERA_WIDTH:
+        return frame
+    h = round(frame.shape[0] * config.CAMERA_WIDTH / w)
+    return cv2.resize(frame, (config.CAMERA_WIDTH, h), interpolation=cv2.INTER_AREA)
 
 
 def _screen_to_frame_px(cursor, sx: int, sy: int, w: int, h: int) -> tuple[int, int]:
@@ -231,6 +253,7 @@ class Session:
                     error = "The camera stopped sending frames."
                     break
 
+                frame = fit_frame(frame)
                 if config.FLIP_HORIZONTAL:
                     frame = cv2.flip(frame, 1)
                 h, w = frame.shape[:2]

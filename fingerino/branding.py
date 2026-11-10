@@ -4,8 +4,9 @@ The icon is drawn in code (no binary asset in the repo) and cached as a
 multi-resolution ``.ico`` next to the downloaded model. The mark is a black
 shaka hand on a cream rounded square; the outlines come from the logo's SVG
 (docs/brand/fingerino-logo.svg, 1024 units square). Up to 32px the hand is
-drawn larger, so 16px still reads as a hand, and the plate's edge darker, so
-it keeps its shape on a light taskbar. Every size is drawn on its own, not shrunk from the largest.
+drawn larger, so 16px still reads as a hand. The plate has no outline: on a
+light title bar or taskbar one showed as a grey frame around the icon. Every
+size is drawn on its own, not shrunk from the largest.
 """
 
 from __future__ import annotations
@@ -15,12 +16,10 @@ import os
 from PIL import Image, ImageDraw
 
 # Bumped when the artwork changes so cached icons are regenerated.
-ICON_VERSION = 4
+ICON_VERSION = 5
 ICON_SIZES = (16, 20, 24, 32, 48, 64, 128, 256)
 
 _PLATE = (247, 242, 233)       # #F7F2E9
-_EDGE = (200, 191, 177)        # #C8BFB1
-_EDGE_SMALL = (150, 141, 127)  # darker, for the 1-2px edge of tiny icons
 _INK = (23, 23, 23)            # #171717
 
 # The hand: thumb, three curled fingers, the little finger with the wrist,
@@ -82,11 +81,8 @@ def _draw_icon(size: int) -> Image.Image:
 
     img = Image.new("RGBA", (n, n), (0, 0, 0, 0))
     d = ImageDraw.Draw(img)
-    edge = max(ss, round(n * 10 / 1024))
     d.rounded_rectangle([0, 0, n - 1, n - 1], round(n * 235 / 1024),
-                        fill=_PLATE + (255,),
-                        outline=(_EDGE_SMALL if small else _EDGE) + (255,),
-                        width=edge)
+                        fill=_PLATE + (255,))
 
     # Tiny icons get a bigger hand: there is no room to spare for margins.
     scale = n / 1024 * (1.18 if small else 1.0)

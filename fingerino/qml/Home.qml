@@ -10,6 +10,7 @@ import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
 import QtQuick.Dialogs
+import QtQuick.Shapes
 
 ApplicationWindow {
     id: win
@@ -17,9 +18,21 @@ ApplicationWindow {
     required property QtObject bridge
     property int page: 0
     readonly property bool onWindows: Qt.platform.os === "windows"
-    // Segoe Fluent Icons ships with Windows 11; MDL2 Assets is the Windows 10
-    // fallback with the same code points. Elsewhere the glyphs are left out.
-    readonly property string iconFont: "Segoe Fluent Icons, Segoe MDL2 Assets"
+    // Navigation icons, drawn here as 24-unit outlines rather than taken from
+    // an icon font: Segoe Fluent Icons isn't on every Windows PC, and where
+    // it was missing the glyphs showed as empty boxes.
+    readonly property var navIcons: ({
+        home: "M3.5 10.5 L12 3.5 L20.5 10.5 M5.5 9 V20.5 H10 V14.5 H14 V20.5 H18.5 V9",
+        hand: "M8 13 V5.75 A1.25 1.25 0 0 1 10.5 5.75 V11 M10.5 11 V4.25 A1.25 1.25 0 0 1 13 4.25 V11 "
+              + "M13 11 V5.25 A1.25 1.25 0 0 1 15.5 5.25 V11.5 M15.5 11.5 V7.75 A1.25 1.25 0 0 1 18 7.75 "
+              + "V14 C18 18 15.5 21 11.5 21 C9 21 7.5 20 6 18 L3.6 14.4 A1.3 1.3 0 0 1 5.6 12.8 L8 15",
+        gear: "M19.42 10.34 L21.92 10.70 L21.92 13.30 L19.42 13.66 L18.42 16.07 L19.93 18.09 "
+              + "L18.09 19.93 L16.07 18.42 L13.66 19.42 L13.30 21.92 L10.70 21.92 L10.34 19.42 "
+              + "L7.93 18.42 L5.91 19.93 L4.07 18.09 L5.58 16.07 L4.58 13.66 L2.08 13.30 "
+              + "L2.08 10.70 L4.58 10.34 L5.58 7.93 L4.07 5.91 L5.91 4.07 L7.93 5.58 "
+              + "L10.34 4.58 L10.70 2.08 L13.30 2.08 L13.66 4.58 L16.07 5.58 L18.09 4.07 "
+              + "L19.93 5.91 L18.42 7.93 Z M15 12 A3 3 0 1 1 9 12 A3 3 0 1 1 15 12 Z"
+    })
     // Fluent follows the Windows theme, so every colour of our own comes in a
     // pair, each at least 4.5:1 on that theme's cards (tests/test_home_colors.py).
     readonly property bool dark: palette.window.hslLightness < 0.5
@@ -65,17 +78,31 @@ ApplicationWindow {
     component NavItem: ItemDelegate {
         id: nav
         required property int index
-        property string glyph
+        property string navIcon
         Layout.fillWidth: true
         highlighted: win.page === index
         onClicked: win.page = index
         contentItem: RowLayout {
             spacing: 12
-            Label {
-                visible: win.onWindows && nav.glyph !== ""
-                text: nav.glyph
-                font.family: win.iconFont
-                font.pixelSize: win.fs(16)
+            Item {
+                objectName: "navIcon-" + nav.navIcon
+                implicitWidth: win.fs(16)
+                implicitHeight: win.fs(16)
+                Shape {
+                    width: 24
+                    height: 24
+                    scale: parent.width / 24
+                    transformOrigin: Item.TopLeft
+                    preferredRendererType: Shape.CurveRenderer
+                    ShapePath {
+                        strokeColor: nav.palette.buttonText
+                        strokeWidth: 1.6
+                        fillColor: "transparent"
+                        capStyle: ShapePath.RoundCap
+                        joinStyle: ShapePath.RoundJoin
+                        PathSvg { path: win.navIcons[nav.navIcon] }
+                    }
+                }
             }
             Label {
                 text: nav.text
@@ -892,10 +919,10 @@ ApplicationWindow {
 
             // The window title already says Fingerino; just leave breathing room.
             Item { implicitHeight: 8 }
-            NavItem { index: 0; text: "Home"; glyph: "" }
-            NavItem { index: 1; text: "Gestures"; glyph: "" }
+            NavItem { index: 0; text: "Home"; navIcon: "home" }
+            NavItem { index: 1; text: "Gestures"; navIcon: "hand" }
             Item { Layout.fillHeight: true }
-            NavItem { index: 2; text: "Settings"; glyph: "" }
+            NavItem { index: 2; text: "Settings"; navIcon: "gear" }
         }
 
         // Hairline between the navigation and the page.
@@ -1423,20 +1450,20 @@ ApplicationWindow {
                 Group {
                     Card {
                         title: "Theme"
-                        description: "Light or dark, or the same as Windows."
+                        description: "Dark, light, or the same as Windows."
                         ComboBox {
                             objectName: "themeBox"
                             model: [
-                                { value: "system", text: "Use system setting" },
+                                { value: "dark", text: "Dark" },
                                 { value: "light", text: "Light" },
-                                { value: "dark", text: "Dark" }
+                                { value: "system", text: "Use system setting" }
                             ]
                             textRole: "text"
                             valueRole: "value"
                             implicitWidth: 200
                             // Not indexOfValue(): bound at start it runs before the
                             // model is filled, leaves the box blank and never re-runs.
-                            currentIndex: ["system", "light", "dark"].indexOf(win.bridge.theme)
+                            currentIndex: ["dark", "light", "system"].indexOf(win.bridge.theme)
                             onActivated: win.bridge.setTheme(currentValue)
                             Accessible.name: "Theme"
                         }

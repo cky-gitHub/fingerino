@@ -54,8 +54,9 @@ class Settings:
     # Off by default; always drawn while a new sign is being recorded, so
     # the user can see what Fingerino sees. --debug also turns it on.
     skeleton: bool = False
-    # Home's appearance: "system" follows Windows, or "light" / "dark".
-    theme: str = "system"
+    # Home's appearance: "dark" (the default), "light", or "system" to
+    # follow Windows.
+    theme: str = "dark"
     # The day the Premium trial began ("YYYY-MM-DD"), set on the first launch
     # of a version that has one (main.py); "" before that. See licence.py.
     trial_started: str = ""
@@ -64,7 +65,7 @@ class Settings:
         return {"schema": SCHEMA, "gestures": dict(self.gestures),
                 "onboarded": self.onboarded, "start_on_open": self.start_on_open,
                 "hotkey": self.hotkey, "cursor": self.cursor,
-                "skeleton": self.skeleton, "theme": self.theme,
+                "skeleton": self.skeleton, "appearance": self.theme,
                 "trial_started": self.trial_started}
 
     @classmethod
@@ -92,8 +93,13 @@ class Settings:
             s.cursor = data["cursor"]
         if isinstance(data.get("skeleton"), bool):
             s.skeleton = data["skeleton"]
-        if data.get("theme") in THEMES:
-            s.theme = data["theme"]
+        # Stored as "appearance" since dark became the default. v0.3.0 wrote
+        # "theme", and its "system" was usually just the old default, so of
+        # that key only an explicit "light" is kept.
+        if data.get("appearance") in THEMES:
+            s.theme = data["appearance"]
+        elif data.get("theme") == "light":
+            s.theme = "light"
         if isinstance(data.get("hotkey"), str) and data["hotkey"].strip():
             s.hotkey = data["hotkey"]
         if isinstance(data.get("trial_started"), str):

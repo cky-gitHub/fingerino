@@ -178,9 +178,9 @@ def test_theme_setting(home, tmp_path):
 
     a = home
     hints = a.app.styleHints()
-    assert a.bridge.property("theme") == "system"
+    assert a.bridge.property("theme") == "dark"                 # the default
     box = a.window.findChild(QObject, "themeBox")
-    assert box.property("displayText") == "Use system setting"   # not blank
+    assert box.property("displayText") == "Dark"                 # not blank
     a.bridge.setTheme("light")
     assert hints.colorScheme() == Qt.ColorScheme.Light
     assert a.prefs.theme == "light"
@@ -190,5 +190,22 @@ def test_theme_setting(home, tmp_path):
     a.bridge.setTheme("purple")                          # ignored
     assert a.prefs.theme == "dark"
     a.bridge.setTheme("system")
-    assert settings.Settings.from_json({"theme": "nope"}).theme == "system"
+    assert box.property("displayText") == "Use system setting"
+    assert settings.Settings.from_json({"appearance": "nope"}).theme == "dark"
+    assert settings.Settings.from_json({"appearance": "system"}).theme == "system"
+    # v0.3.0 files: "system" was the old default, so it becomes dark; light stays.
+    assert settings.Settings.from_json({"theme": "system"}).theme == "dark"
+    assert settings.Settings.from_json({"theme": "light"}).theme == "light"
     assert settings.Settings.from_json(settings.Settings(theme="light").to_json()).theme == "light"
+
+
+def test_navigation_icons_are_drawn_not_font_glyphs(home):
+    """The icons used to be Segoe Fluent Icons glyphs, which showed as empty
+    boxes on PCs without that font. They are drawn outlines now."""
+    from PySide6.QtCore import QObject
+
+    for name in ("home", "hand", "gear"):
+        icon = home.window.findChild(QObject, "navIcon-" + name)
+        assert icon is not None, name
+        assert icon.property("width") > 0
+

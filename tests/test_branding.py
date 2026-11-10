@@ -28,7 +28,7 @@ def test_the_ico_holds_each_size_drawn_for_it(tmp_path):
         assert {s[0] for s in ico.info["sizes"]} == set(branding.ICON_SIZES)
         ico.size = (16, 16)
         small = ico.convert("RGBA")
-    # The 16px frame is the one drawn for 16px (bigger hand, darker edge),
+    # The 16px frame is the one drawn for 16px (bigger hand),
     # not the 256px one shrunk.
     assert list(small.getdata()) == list(branding.render(16).getdata())
     assert branding.icon_path(str(tmp_path)) == path       # cached
