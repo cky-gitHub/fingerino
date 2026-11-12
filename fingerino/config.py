@@ -227,6 +227,11 @@ WINDOW_NAME = "Fingerino"
 # corner at the camera's aspect ratio. 1/36 is two-thirds the width and height
 # of the original 1/16.
 WINDOW_SCREEN_FRACTION = 1 / 36
+# The HUD width, in physical pixels, its chrome (status pill, skeleton,
+# arrows, prompts) is designed at: a 1920x1080 screen at 100% scale. A wider
+# HUD (a bigger screen, or Windows display scaling) scales the chrome up with
+# it; a narrower one keeps the design size, so text never gets smaller.
+HUD_DESIGN_WIDTH = 320
 WINDOW_ALWAYS_ON_TOP = True
 # How often to check the topmost claim, in seconds of wall-clock time. It is
 # only renewed when something that is not a menu or other shell UI covers the

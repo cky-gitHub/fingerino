@@ -192,3 +192,20 @@ def test_theme_setting(home, tmp_path):
     a.bridge.setTheme("system")
     assert settings.Settings.from_json({"theme": "nope"}).theme == "system"
     assert settings.Settings.from_json(settings.Settings(theme="light").to_json()).theme == "light"
+
+
+def test_nav_icons_are_drawn_not_taken_from_a_font(home):
+    # The Segoe icon fonts are missing on some Windows 11 installs, where the
+    # glyphs showed as boxes. The icons are outlines Fingerino draws itself.
+    qml = (Path(__file__).resolve().parent.parent / "fingerino" / "qml" / "Home.qml").read_text(
+        encoding="utf-8")
+    assert "Segoe Fluent Icons" not in qml and "MDL2" not in qml
+    todo, icons = [home.window.contentItem()], []
+    while todo:
+        item = todo.pop()
+        if item.objectName() == "navIcon":
+            icons.append(item)
+        todo.extend(item.childItems())
+    assert len(icons) == 3
+    for icon in icons:
+        assert icon.isVisible() and icon.width() == icon.height() >= 16

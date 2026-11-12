@@ -7,11 +7,12 @@ gleam, which confirm that the sign being tried was recognised. Text is rendered 
 anti-aliasing. The hand skeleton is a setting (and always on while a sign is
 recorded); FPS lives behind ``debug``.
 
-Everything here is drawn *onto the camera frame* at the camera's native
-resolution, which the HUD window then shrinks to its own size; :meth:`UIOverlay.s`
-inflates design sizes by that ratio so the chrome holds a constant apparent
-size. Design against roughly 480x270. The gesture guide that used to be drawn
-here now lives in the Home window (qml/Home.qml).
+Everything here is drawn onto the camera frame *after* it has been shrunk to
+the HUD window's size (drawing at the camera's full resolution cost several
+times as much). :meth:`UIOverlay.s` scales design sizes with the HUD's width
+(``config.HUD_DESIGN_WIDTH``), so the chrome keeps its proportions on any
+screen and with any camera. The gesture guide that used to be drawn here now
+lives in the Home window (qml/Home.qml).
 """
 
 from __future__ import annotations
@@ -152,8 +153,8 @@ def _chevron(frame, cx, cy, size, up, color, thickness=2) -> None:
 
 class UIOverlay:
     def __init__(self, ui_scale: float = 1.0) -> None:
-        # Never shrink below the design-native size — only compensate for a
-        # preview window smaller than the camera's native resolution.
+        # Never shrink below the design size: on a small HUD the chrome stays
+        # legible rather than proportional.
         self._scale = max(1.0, ui_scale)
         self.f_status = _load_font(self.s(13), bold=True)
         self.f_mode = _load_font(self.s(12), bold=True)
@@ -174,8 +175,7 @@ class UIOverlay:
         """Scale a design-space size into frame-space.
 
         Chrome that overlays live video -- the status pill, cursor reticle,
-        toasts -- uses this: it keeps a *constant apparent size* regardless
-        of window size, which is what you want for a HUD element.
+        toasts -- uses this, so it keeps its size relative to the HUD.
         """
         return max(1, round(v * self._scale))
 
@@ -476,8 +476,9 @@ class UIOverlay:
     def draw(self, frame, *, tracking, mode="none", mode_label="", cursor_px=None,
              zone_px, hands_px=None, exit_progress=0.0, dragging=False,
              drag_progress=0.0, debug=False, skeleton=False, fps=0.0,
-             paused=False, hold_progress=0.0, sign_progress=0.0,
-             record_progress=0.0, trial=False) -> np.ndarray:
+             camera_size: tuple[int, int] | None = None, paused=False,
+             hold_progress=0.0, sign_progress=0.0, record_progress=0.0,
+             trial=False) -> np.ndarray:
         # No control zone without the cursor: it maps the hand to the screen.
         if zone_px is not None:
             self._draw_zone(frame, zone_px, tracking)
@@ -513,8 +514,10 @@ class UIOverlay:
         self._draw_toasts(frame)
 
         if debug:
+            # What the camera really sends: it may not honour the size asked for.
+            cam = f"{camera_size[0]}x{camera_size[1]}   " if camera_size else ""
             self._text((self.s(10), frame.shape[0] - self.s(10)),
-                       f"{fps:4.1f} fps   {mode}", self.f_debug,
+                       f"{fps:4.1f} fps   {cam}{mode}", self.f_debug,
                        config.COLOR_TEXT_FAINT, anchor="ld")
 
         return self._flush_overlay(frame)

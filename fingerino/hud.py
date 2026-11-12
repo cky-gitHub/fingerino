@@ -11,42 +11,52 @@ from __future__ import annotations
 
 import sys
 
-from PySide6.QtCore import QRect, QRectF, QSize, Qt, Signal
-from PySide6.QtGui import QColor, QFont, QImage, QPainter, QPainterPath, QPen
+from PySide6.QtCore import QPointF, QRect, QRectF, QSize, Qt, Signal
+from PySide6.QtGui import QColor, QImage, QPainter, QPainterPath, QPen
 from PySide6.QtWidgets import QHBoxLayout, QToolButton, QVBoxLayout, QWidget
 
 from . import winui
 
 _WIN = sys.platform.startswith("win")
-# Windows caption-button glyphs (Segoe Fluent Icons / MDL2 Assets), so the
-# buttons look exactly like the ones on every other window. Plain text
-# elsewhere.
-_GLYPH_MIN, _GLYPH_CLOSE = ("\uE921", "\uE8BB") if _WIN else ("-", "x")
 _RADIUS = 8          # Windows 11 top-level window corner radius
+_GLYPH = 10          # caption glyph size, as on Windows' own caption buttons
 
 
 class _CaptionButton(QToolButton):
-    def __init__(self, glyph: str, tip: str, danger: bool, parent: QWidget) -> None:
+    """A minimize or close button. The glyph is drawn here rather than taken
+    from the Segoe icon fonts, which some Windows installs lack (they showed
+    as empty boxes)."""
+
+    def __init__(self, kind: str, tip: str, danger: bool, parent: QWidget) -> None:
         super().__init__(parent)
-        self.setText(glyph)
+        self.kind = kind             # "minimize" or "close"
         self.setToolTip(tip)
         self.setAccessibleName(tip)
         self.setCursor(Qt.CursorShape.ArrowCursor)
         self.setFixedSize(36, 26)
         self.setFocusPolicy(Qt.FocusPolicy.NoFocus)
-        if _WIN:
-            font = QFont("Segoe Fluent Icons")
-            font.setFamilies(["Segoe Fluent Icons", "Segoe MDL2 Assets"])
-            font.setPixelSize(10)
-            self.setFont(font)
         # Same hover colours as the system caption buttons: a faint wash, or
         # the Windows close-button red.
         hover = "#c42b1c" if danger else "rgba(255, 255, 255, 40)"
         self.setStyleSheet(
-            "QToolButton { color: white; background: rgba(0, 0, 0, 90);"
+            "QToolButton { background: rgba(0, 0, 0, 90);"
             " border: none; border-radius: 4px; }"
             f"QToolButton:hover {{ background: {hover}; }}"
             "QToolButton:pressed { background: rgba(255, 255, 255, 25); }")
+
+    def paintEvent(self, event) -> None:
+        super().paintEvent(event)
+        p = QPainter(self)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing)
+        p.setPen(QPen(QColor("white"), 1.0))
+        c = QRectF(self.rect()).center()
+        half = _GLYPH / 2
+        if self.kind == "close":
+            p.drawLine(QPointF(c.x() - half, c.y() - half), QPointF(c.x() + half, c.y() + half))
+            p.drawLine(QPointF(c.x() - half, c.y() + half), QPointF(c.x() + half, c.y() - half))
+        else:
+            p.drawLine(QPointF(c.x() - half, c.y()), QPointF(c.x() + half, c.y()))
+        p.end()
 
 
 class Hud(QWidget):
@@ -69,9 +79,9 @@ class Hud(QWidget):
         self._hover = False
         self._decorated = False
 
-        self._min = _CaptionButton(_GLYPH_MIN, "Hide preview (tracking continues)",
+        self._min = _CaptionButton("minimize", "Hide preview (tracking continues)",
                                    False, self)
-        self._close = _CaptionButton(_GLYPH_CLOSE, "Stop Fingerino", True, self)
+        self._close = _CaptionButton("close", "Stop Fingerino", True, self)
         self._min.clicked.connect(self.minimizeRequested)
         self._close.clicked.connect(self.closeRequested)
 

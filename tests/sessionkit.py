@@ -20,8 +20,9 @@ FPS = 30
 
 
 class World:
-    def __init__(self, frames, stop_at=None):
+    def __init__(self, frames, stop_at=None, camera=(config.CAMERA_WIDTH, config.CAMERA_HEIGHT)):
         self.frames = list(frames)            # per frame: list of hands
+        self.camera = camera                  # (width, height) the camera sends
         self.i = -1
         self.t = 100.0
         self.stop_at = len(self.frames) if stop_at is None else stop_at
@@ -30,6 +31,7 @@ class World:
         self.actions = []
         self.toasts = []
         self.frames_out = 0
+        self.last_frame = None                # the last HUD frame delivered
         self.on_frame_hook = None             # called with the frame index
 
     # -- camera ---------------------------------------------------------------
@@ -45,7 +47,7 @@ class World:
                 world.t += 1 / FPS
                 if world.i >= world.stop_at:
                     world.session.stop()
-                frame = np.zeros((config.CAMERA_HEIGHT, config.CAMERA_WIDTH, 3), np.uint8)
+                frame = np.zeros((world.camera[1], world.camera[0], 3), np.uint8)
                 return True, frame
 
             def release(self):
@@ -90,9 +92,9 @@ class World:
 
 
 def run(monkeypatch, frames, prefs=None, *, drive=True, hook=None, registry=None,
-        library=None, tracker=None):
+        library=None, tracker=None, options=None, camera=None):
     """Run a session over ``frames``; return the World with what happened."""
-    world = World(frames)
+    world = World(frames) if camera is None else World(frames, camera=camera)
     world.on_frame_hook = hook
     monkeypatch.setattr(engine, "open_camera", world.open_camera)
     monkeypatch.setattr(engine, "HandTracker", tracker or world.tracker)
@@ -113,12 +115,13 @@ def run(monkeypatch, frames, prefs=None, *, drive=True, hook=None, registry=None
     monkeypatch.setattr(engine.UIOverlay, "toast", toast)
 
     from fingerino import settings
-    session = engine.Session(engine.Options(drive=drive), prefs or settings.Settings(),
+    session = engine.Session(options or engine.Options(drive=drive), prefs or settings.Settings(),
                              registry, library)
     world.session = session
 
     def on_frame(frame):
         world.frames_out += 1
+        world.last_frame = frame
         if world.on_frame_hook:
             world.on_frame_hook(world, session)
 

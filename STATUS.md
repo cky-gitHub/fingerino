@@ -1,6 +1,6 @@
 # Fingerino status
 
-Last updated 2026-11-07. Read this first when picking the work up.
+Last updated 2026-11-12. Read this first when picking the work up.
 
 ## Where things stand
 
@@ -9,16 +9,25 @@ actions, anyone can record a new sign without code, and the cursor is an
 optional module that is off by default.
 
 - **`main`** has everything below, including the premium foundation (PR
-  #19). Branch `release/v0.3.0` prepares the release (version 0.3.0,
-  the limit and trial live, "Get Premium" reads "Coming soon", What's new
-  in `docs/release-notes/v0.3.0.md`).
+  #19) and the v0.3.0 release (PR #21: the limit and trial live, "Get
+  Premium" reads "Coming soon", the new shaka logo, "Made by CKY").
   Private repo: `feat/licence-issuer` (PR #2) waits for merge.
   (`ccr-2c0750c7-uhrknd` and `claude/apollo-rocket-controls-igrhf0` on the
   remote were not made in this work; leave them alone unless the owner says.)
-- **Released:** v0.2.1 (2026-11-07) is the latest release: v0.2.0 plus the
-  MediaPipe telemetry fix, cut from the `v0.2.0` tag, MIT licence. Nothing
-  from slices 1 to 5 or the redesign has been released yet; the next release
-  will be v0.3.0 under FCL-1.0-MIT.
+- **Released:** v0.3.0 (2026-11-09) is the latest release, the first under
+  FCL-1.0-MIT: slices 1 to 5, the redesign, Free/Premium with the trial,
+  the new logo. The README links the installers through
+  `releases/latest/download/<version-less name>`, so its links always fetch
+  the newest release. Earlier: v0.2.1 (2026-11-07, MIT).
+- **v0.3.1 (branch `fix/hud-size-and-icons`, not released):** fixes seen on
+  another Windows 11 laptop (100% scale). The HUD was laggy and its chrome
+  too small: it was drawn on the full camera frame (28 ms a frame at
+  1280x720, 66 ms at 1080p, on the owner's laptop) and sized for 1280x720
+  even when the camera sent more. Now the frame is shrunk to the HUD first
+  (4 ms) and the chrome scales with the HUD width (`HUD_DESIGN_WIDTH`).
+  The nav icons and the HUD's caption buttons were boxes there (Segoe icon
+  font not found); both are now drawn by Fingerino. `--debug` shows the
+  camera's real resolution. Not yet confirmed on that laptop.
 - **Done on `main` since v0.2.0** (PRs #8, #9, #10):
   1. Signs split from actions (`fingerino/actions.py` registry).
   2. Cursor optional, off by default for everyone, upgraders included.
@@ -90,12 +99,7 @@ optional module that is off by default.
      manual command. Needs its own security care (it holds the key).
    - Camera check: record past the limit on a free install, "Use this one
      instead", enter a key, remove it.
-3. **Release v0.3.0** (owner's call to release before the Wispr hold):
-   preview the build (Actions › Release › Run workflow on the branch), do
-   the camera checks (Hold on Windows; macOS if a Mac is available), merge,
-   then tag `v0.3.0` with the owner's go-ahead. First FCL release.
-   It ships the new logo (a solid black shaka on cream,
-   `docs/brand/fingerino-logo.svg`) and "Made by CKY" in Settings › About.
+3. ~~Release v0.3.0~~ — done 2026-11-09 (tag `v0.3.0` on `8eef7b8`).
 4. **Premium features, in `fingerino_premium`.** Wispr Flow first: a new
    action kind "hold a key while the sign is held" (press when the sign
    starts, release when it ends) so a shaka holds Wispr's push-to-talk key.

@@ -34,9 +34,9 @@ class Options:
     camera: int = config.CAMERA_INDEX
     drive: bool = True          # False: track and draw, never touch the OS
     debug: bool = False         # raw skeleton + FPS on the HUD
-    # Physical pixel size of the HUD. Frames are delivered at this size, and
-    # the HUD chrome is scaled so it reads the same at any HUD size.
-    preview_size: tuple[int, int] = (480, 270)
+    # Physical pixel size of the HUD. Frames are drawn and delivered at this
+    # size, and the HUD chrome is scaled with it (config.HUD_DESIGN_WIDTH).
+    preview_size: tuple[int, int] = (320, 180)
 
 
 def open_camera(index: int) -> cv2.VideoCapture:
@@ -195,9 +195,9 @@ class Session:
         engine = GestureEngine()
         registry = self.registry
         out_w, out_h = opts.preview_size
-        # The frame is drawn at native camera resolution then shrunk to the
-        # HUD, so HUD sizes must be inflated by this ratio to stay legible.
-        overlay = UIOverlay(ui_scale=config.CAMERA_WIDTH / max(out_w, 1))
+        # The HUD is drawn at its own size, and its chrome grows with it, so
+        # it looks the same whatever the camera sends and whatever the screen.
+        overlay = UIOverlay(ui_scale=out_w / config.HUD_DESIGN_WIDTH)
         if needs_access:
             overlay.toast("Allow Accessibility to control the mouse")
 
@@ -233,13 +233,21 @@ class Session:
 
                 if config.FLIP_HORIZONTAL:
                     frame = cv2.flip(frame, 1)
-                h, w = frame.shape[:2]
+                camera_size = (frame.shape[1], frame.shape[0])
 
                 # Push frame for async detection with a strictly increasing timestamp.
                 rgb = np.ascontiguousarray(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
                 ts_ms = max(int(time.perf_counter() * 1000), last_ts_ms + 1)
                 last_ts_ms = ts_ms
                 tracker.submit(rgb, ts_ms)
+
+                # The tracker has the full picture; the HUD only needs its own
+                # size. Shrinking first makes drawing the HUD several times
+                # cheaper (more so for cameras that send 1080p or more), and
+                # everything below is in HUD pixels.
+                if camera_size != (out_w, out_h):
+                    frame = cv2.resize(frame, (out_w, out_h), interpolation=cv2.INTER_AREA)
+                h, w = out_h, out_w
 
                 now = time.perf_counter()
                 result = tracker.latest()
@@ -382,13 +390,14 @@ class Session:
                     # while Home records a sign, so the user sees what's seen.
                     skeleton=opts.debug or self.prefs.skeleton or quiet,
                     fps=fps,
+                    camera_size=camera_size,
                     paused=self.paused,
                     hold_progress=out.hold_progress,
                     sign_progress=out.sign_progress,
                     record_progress=record_progress,
                     trial=trial is not None,
                 )
-                on_frame(cv2.resize(frame, (out_w, out_h), interpolation=cv2.INTER_AREA))
+                on_frame(frame)
 
                 state = (self.paused, tracking)
                 if state != last_state:

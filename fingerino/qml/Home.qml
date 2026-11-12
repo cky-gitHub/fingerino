@@ -10,16 +10,30 @@ import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
 import QtQuick.Dialogs
+import QtQuick.Shapes
 
 ApplicationWindow {
     id: win
 
     required property QtObject bridge
     property int page: 0
-    readonly property bool onWindows: Qt.platform.os === "windows"
-    // Segoe Fluent Icons ships with Windows 11; MDL2 Assets is the Windows 10
-    // fallback with the same code points. Elsewhere the glyphs are left out.
-    readonly property string iconFont: "Segoe Fluent Icons, Segoe MDL2 Assets"
+    // The navigation icons, drawn as outlines on a 24-unit grid rather than
+    // taken from the Segoe icon fonts, which some Windows installs lack (they
+    // showed as empty boxes). The same on every platform.
+    readonly property var navIcons: ({
+        home: "M 3 10.2 L 12 3 L 21 10.2 L 21 21 L 15 21 L 15 15 L 9 15 L 9 21 L 3 21 Z",
+        hand: "M 6.8 13.5 L 6.8 6.6 A 1.6 1.6 0 0 1 10 6.6 L 10 12 L 10 4.6 A 1.6 1.6 0 0 1 13.2 4.6"
+            + " L 13.2 12 L 13.2 5.6 A 1.6 1.6 0 0 1 16.4 5.6 L 16.4 12.5 L 16.4 8.1"
+            + " A 1.6 1.6 0 0 1 19.6 8.1 L 19.6 15 C 19.6 19 17 22 13.6 22 L 12.8 22"
+            + " C 10.6 22 9 21 7.8 19.4 L 4.4 14.6 A 1.5 1.5 0 0 1 6.8 12.8 Z",
+        gear: "M 19.15 10.08 L 21.68 10.47 L 21.68 13.53 L 19.15 13.92 L 18.41 15.70"
+            + " L 19.93 17.76 L 17.76 19.93 L 15.70 18.41 L 13.92 19.15 L 13.53 21.68"
+            + " L 10.47 21.68 L 10.08 19.15 L 8.30 18.41 L 6.24 19.93 L 4.07 17.76"
+            + " L 5.59 15.70 L 4.85 13.92 L 2.32 13.53 L 2.32 10.47 L 4.85 10.08"
+            + " L 5.59 8.30 L 4.07 6.24 L 6.24 4.07 L 8.30 5.59 L 10.08 4.85"
+            + " L 10.47 2.32 L 13.53 2.32 L 13.92 4.85 L 15.70 5.59 L 17.76 4.07"
+            + " L 19.93 6.24 L 18.41 8.30 Z M 15 12 A 3 3 0 1 0 9 12 A 3 3 0 1 0 15 12 Z"
+    })
     // Fluent follows the Windows theme, so every colour of our own comes in a
     // pair, each at least 4.5:1 on that theme's cards (tests/test_home_colors.py).
     readonly property bool dark: palette.window.hslLightness < 0.5
@@ -65,19 +79,36 @@ ApplicationWindow {
     component NavItem: ItemDelegate {
         id: nav
         required property int index
-        property string glyph
+        property string iconName        // a key of win.navIcons
         Layout.fillWidth: true
         highlighted: win.page === index
         onClicked: win.page = index
         contentItem: RowLayout {
             spacing: 12
-            Label {
-                visible: win.onWindows && nav.glyph !== ""
-                text: nav.glyph
-                font.family: win.iconFont
-                font.pixelSize: win.fs(16)
+            // A fixed box: a Shape sizes itself to its path, which would
+            // feed back into the scale below.
+            Item {
+                id: navIcon
+                visible: nav.iconName !== ""
+                objectName: "navIcon"
+                Layout.preferredWidth: win.fs(16)
+                Layout.preferredHeight: win.fs(16)
+                Shape {
+                    anchors.fill: parent
+                    preferredRendererType: Shape.CurveRenderer
+                    ShapePath {
+                        scale: Qt.size(navIcon.width / 24, navIcon.height / 24)
+                        strokeColor: navLabel.color
+                        strokeWidth: 1
+                        fillColor: "transparent"
+                        joinStyle: ShapePath.RoundJoin
+                        capStyle: ShapePath.RoundCap
+                        PathSvg { path: win.navIcons[nav.iconName] || "" }
+                    }
+                }
             }
             Label {
+                id: navLabel
                 text: nav.text
                 Layout.fillWidth: true
             }
@@ -892,10 +923,10 @@ ApplicationWindow {
 
             // The window title already says Fingerino; just leave breathing room.
             Item { implicitHeight: 8 }
-            NavItem { index: 0; text: "Home"; glyph: "" }
-            NavItem { index: 1; text: "Gestures"; glyph: "" }
+            NavItem { index: 0; text: "Home"; iconName: "home" }
+            NavItem { index: 1; text: "Gestures"; iconName: "hand" }
             Item { Layout.fillHeight: true }
-            NavItem { index: 2; text: "Settings"; glyph: "" }
+            NavItem { index: 2; text: "Settings"; iconName: "gear" }
         }
 
         // Hairline between the navigation and the page.
